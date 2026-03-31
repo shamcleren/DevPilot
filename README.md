@@ -56,6 +56,11 @@ scripts/
 
 ## 快速开始
 
+如果你是用 Cursor / agent 模式继续开发，先读：
+
+- `AGENTS.md`
+- `docs/context/current-status.md`
+
 ### 安装依赖
 
 ```bash

@@ -1,0 +1,13 @@
+---
+description: DevPilot project context and superpowers workflow
+alwaysApply: true
+---
+
+# DevPilot Project Rule
+
+- Start each session by invoking `superpowers:using-superpowers`.
+- Before substantial work, read `AGENTS.md`, `README.md`, and `docs/context/current-status.md`.
+- Phase 1 priority is unified monitoring: clear status visibility, hover context, and approval / structured-choice handling.
+- Do not assume `text_input`, deep terminal jump, or full external action write-back already exists.
+- Keep shared event and session types aligned across `src/shared/`, `src/main/`, and `src/renderer/`.
+- Prefer minimal, testable changes over broad refactors.
