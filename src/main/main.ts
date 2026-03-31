@@ -1,5 +1,7 @@
 import { BrowserWindow, app, ipcMain } from "electron";
 import fs from "node:fs";
+import { createActionResponseTransport } from "./actionResponse/createActionResponseTransport";
+import { dispatchActionResponse } from "./actionResponse/dispatchActionResponse";
 import { lineToSessionEvent } from "./ingress/hookIngress";
 import { createIpcHub } from "./ipc/ipcHub";
 import { createSessionStore } from "./session/sessionStore";
@@ -8,6 +10,7 @@ import { createFloatingWindow } from "./window/createFloatingWindow";
 import type { SessionRecord } from "../shared/sessionTypes";
 
 const sessionStore = createSessionStore();
+const actionResponseTransport = createActionResponseTransport(process.env);
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -19,6 +22,8 @@ function broadcastSessions() {
 }
 
 function wireActionResponseIpc() {
+  ipcMain.handle("devpilot:get-sessions", () => sessionStore.getSessions());
+
   ipcMain.on("devpilot:action-response", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object") return;
     const p = payload as Record<string, unknown>;
@@ -27,11 +32,16 @@ function wireActionResponseIpc() {
     const option = typeof p.option === "string" ? p.option : "";
     if (!sessionId || !actionId || !option) return;
 
-    const line = sessionStore.respondToPendingAction(sessionId, actionId, option);
-    if (line) {
-      broadcastSessions();
-      console.log("[DevPilot] action_response:", line);
-    }
+    void dispatchActionResponse(
+      sessionStore,
+      actionResponseTransport,
+      broadcastSessions,
+      sessionId,
+      actionId,
+      option,
+    ).catch((err) => {
+      console.error("[DevPilot] action_response transport error:", err);
+    });
   });
 }
 

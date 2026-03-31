@@ -9,3 +9,7 @@ out
 .env.*.local
 coverage
 *.tsbuildinfo
+
+# Playwright (E2E)
+test-results/
+playwright-report/

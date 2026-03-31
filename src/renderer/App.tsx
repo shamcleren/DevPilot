@@ -2,16 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { StatusBar } from "./components/StatusBar";
 import { SessionList } from "./components/SessionList";
 import type { MonitorSessionRow } from "./monitorSession";
-import { sessionRecordToRow } from "./sessionRows";
+import { hydrateRowsIfEmpty, rowsFromSessions } from "./sessionBootstrap";
 
 export function App() {
   const [rows, setRows] = useState<MonitorSessionRow[]>([]);
 
   useEffect(() => {
+    let active = true;
     const unsub = window.devpilot.onSessions((sessions) => {
-      setRows(sessions.map(sessionRecordToRow));
+      setRows(rowsFromSessions(sessions));
     });
-    return unsub;
+    void window.devpilot.getSessions().then((sessions) => {
+      if (!active) {
+        return;
+      }
+      setRows((currentRows) => hydrateRowsIfEmpty(currentRows, sessions));
+    });
+    return () => {
+      active = false;
+      unsub();
+    };
   }, []);
 
   const counts = useMemo(
