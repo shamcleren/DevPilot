@@ -2,8 +2,13 @@ import { normalizeCodeBuddyEvent } from "../../adapters/codebuddy/normalizeCodeB
 import { normalizeCursorEvent } from "../../adapters/cursor/normalizeCursorEvent";
 import { isStatusChangeUpstreamEvent } from "../../adapters/shared/eventEnvelope";
 import type { SessionEvent } from "../session/sessionStore";
-import type { PendingAction, ResponseTarget } from "../session/sessionTypes";
-import { isPendingAction, isResponseTarget, isSessionStatus } from "../session/sessionTypes";
+import type { PendingAction, PendingClosed, ResponseTarget } from "../session/sessionTypes";
+import {
+  isPendingAction,
+  isPendingClosed,
+  isResponseTarget,
+  isSessionStatus,
+} from "../session/sessionTypes";
 
 /**
  * Cursor/CodeBuddy 等非规范信封路径：仅当根上存在 `pendingAction` 键时才解释该字段。
@@ -31,6 +36,19 @@ function responseTargetFromRawPayload(
   if (!("responseTarget" in o)) return undefined;
   const raw = o.responseTarget;
   return isResponseTarget(raw) ? raw : undefined;
+}
+
+/**
+ * 非规范信封路径：仅当根上存在 `pendingClosed` 键时才解释该字段。
+ * null 与非法形状都忽略为 undefined，不丢弃整条事件。
+ */
+function pendingClosedFromRawPayload(
+  o: Record<string, unknown>,
+): PendingClosed | undefined {
+  if (!("pendingClosed" in o)) return undefined;
+  const raw = o.pendingClosed;
+  if (raw === null) return undefined;
+  return isPendingClosed(raw) ? raw : undefined;
 }
 
 /**
@@ -78,6 +96,13 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     responseTargetPart = responseTargetFromRawPayload(o);
   }
 
+  let pendingClosedPart: PendingClosed | undefined;
+  if (isStatusChangeUpstreamEvent(parsed)) {
+    pendingClosedPart = normalized.pendingClosed ?? undefined;
+  } else {
+    pendingClosedPart = pendingClosedFromRawPayload(o);
+  }
+
   return {
     type: normalized.type,
     sessionId: normalized.sessionId,
@@ -87,5 +112,6 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     timestamp: normalized.timestamp,
     ...(pendingPart !== undefined ? { pendingAction: pendingPart } : {}),
     ...(responseTargetPart !== undefined ? { responseTarget: responseTargetPart } : {}),
+    ...(pendingClosedPart !== undefined ? { pendingClosed: pendingClosedPart } : {}),
   } as SessionEvent;
 }

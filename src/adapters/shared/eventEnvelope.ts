@@ -3,8 +3,8 @@
  * Task 5：status_change 可携带 pendingAction（审批 / 结构化选项）。
  */
 
-import type { PendingAction, ResponseTarget } from "../../shared/sessionTypes";
-import { isPendingAction, isResponseTarget } from "../../shared/sessionTypes";
+import type { PendingAction, PendingClosed, ResponseTarget } from "../../shared/sessionTypes";
+import { isPendingAction, isPendingClosed, isResponseTarget } from "../../shared/sessionTypes";
 
 export type UpstreamEventType = "status_change";
 
@@ -26,6 +26,8 @@ export interface StatusChangeUpstreamEvent {
   pendingAction?: PendingAction | null;
   /** 可选：action_response 回写目标 */
   responseTarget?: ResponseTarget;
+  /** 可选：某条 pending 已结束（消费 / 过期 / 取消等）；null 视为未提供 */
+  pendingClosed?: PendingClosed | null;
 }
 
 export type UpstreamEventEnvelope = StatusChangeUpstreamEvent;
@@ -49,6 +51,9 @@ export function isStatusChangeUpstreamEvent(
   }
   if ("responseTarget" in o && o.responseTarget !== undefined) {
     if (!isResponseTarget(o.responseTarget)) return false;
+  }
+  if ("pendingClosed" in o && o.pendingClosed !== undefined) {
+    if (o.pendingClosed !== null && !isPendingClosed(o.pendingClosed)) return false;
   }
   return true;
 }

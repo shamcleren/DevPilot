@@ -152,3 +152,210 @@ test("same session: two blocking hooks with different actionIds route action_res
     await collector.close().catch(() => undefined);
   }
 });
+
+const REMOTE_CLOSE_SESSION = "e2e-pending-closed-session";
+const REMOTE_ACTION_X = "e2e-remote-close-x";
+const REMOTE_ACTION_Y = "e2e-remote-close-y";
+const TITLE_REMOTE_X = "E2E remote close card X";
+const TITLE_REMOTE_Y = "E2E remote close card Y";
+
+test("same session: pendingClosed removes only the matching pending card", async () => {
+  const collector = await startActionResponseCollector();
+  const devpilot = await launchDevPilot({
+    actionResponseSocketPath: collector.socketPath,
+  });
+
+  const base = {
+    type: "status_change" as const,
+    sessionId: REMOTE_CLOSE_SESSION,
+    tool: "cursor" as const,
+    status: "waiting" as const,
+    task: "e2e pendingClosed",
+    timestamp: Date.now(),
+  };
+
+  try {
+    const page = await devpilot.app.firstWindow();
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForLoadState("load");
+    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await sendStatusChange(
+      {
+        ...base,
+        timestamp: Date.now(),
+        pendingAction: {
+          id: REMOTE_ACTION_X,
+          type: "single_choice",
+          title: TITLE_REMOTE_X,
+          options: ["X1", "Reject"],
+        },
+      },
+      devpilot.ipcSocketPath,
+    );
+
+    await sendStatusChange(
+      {
+        ...base,
+        timestamp: Date.now(),
+        pendingAction: {
+          id: REMOTE_ACTION_Y,
+          type: "single_choice",
+          title: TITLE_REMOTE_Y,
+          options: ["Y1", "Reject"],
+        },
+      },
+      devpilot.ipcSocketPath,
+    );
+
+    const cardX = page.getByLabel(TITLE_REMOTE_X);
+    const cardY = page.getByLabel(TITLE_REMOTE_Y);
+    await expect(cardX).toBeVisible({ timeout: 15_000 });
+    await expect(cardY).toBeVisible();
+
+    await sendStatusChange(
+      {
+        ...base,
+        timestamp: Date.now(),
+        pendingClosed: { actionId: REMOTE_ACTION_X, reason: "consumed_remote" },
+      },
+      devpilot.ipcSocketPath,
+    );
+
+    await expect(cardX).toBeHidden();
+    await expect(cardY).toBeVisible();
+
+    await sendStatusChange(
+      {
+        ...base,
+        timestamp: Date.now(),
+        pendingClosed: { actionId: REMOTE_ACTION_Y, reason: "consumed_remote" },
+      },
+      devpilot.ipcSocketPath,
+    );
+
+    await expect(cardY).toBeHidden();
+  } finally {
+    await devpilot.close().catch(() => undefined);
+    await collector.close().catch(() => undefined);
+  }
+});
+
+const EXPIRY_SESSION = "e2e-expiry-session";
+const EXPIRY_ACTION = "e2e-expiry-action";
+const EXPIRY_TITLE = "E2E short timeout pending";
+
+test("pending card disappears when lifecycle expires without pendingClosed", async () => {
+  const collector = await startActionResponseCollector();
+  const devpilot = await launchDevPilot({
+    actionResponseSocketPath: collector.socketPath,
+  });
+
+  try {
+    const page = await devpilot.app.firstWindow();
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForLoadState("load");
+    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await sendStatusChange(
+      {
+        type: "status_change",
+        sessionId: EXPIRY_SESSION,
+        tool: "cursor",
+        status: "waiting",
+        task: "e2e expiry",
+        timestamp: Date.now(),
+        pendingAction: {
+          id: EXPIRY_ACTION,
+          type: "single_choice",
+          title: EXPIRY_TITLE,
+          options: ["Soon", "Never"],
+        },
+        responseTarget: {
+          mode: "socket",
+          socketPath: collector.socketPath,
+          timeoutMs: 750,
+        },
+      },
+      devpilot.ipcSocketPath,
+    );
+
+    const pending = page.getByLabel(EXPIRY_TITLE);
+    await expect(pending).toBeVisible({ timeout: 15_000 });
+    await Promise.all([
+      expect(pending).toBeHidden({ timeout: 12_000 }),
+      collector.expectNoFurtherConnections(12_000),
+    ]);
+  } finally {
+    await devpilot.close().catch(() => undefined);
+    await collector.close().catch(() => undefined);
+  }
+});
+
+const FIRST_WIN_SESSION = "e2e-first-win-session";
+const FIRST_WIN_ACTION = "e2e-first-win-action";
+const FIRST_WIN_TITLE = "E2E first-win prompt";
+
+test("after a successful response the card hides and a second action_response is a no-op", async () => {
+  const collector = await startActionResponseCollector();
+  const devpilot = await launchDevPilot({
+    actionResponseSocketPath: collector.socketPath,
+  });
+
+  try {
+    const page = await devpilot.app.firstWindow();
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForLoadState("load");
+    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await sendStatusChange(
+      {
+        type: "status_change",
+        sessionId: FIRST_WIN_SESSION,
+        tool: "cursor",
+        status: "waiting",
+        task: "e2e first win",
+        timestamp: Date.now(),
+        pendingAction: {
+          id: FIRST_WIN_ACTION,
+          type: "single_choice",
+          title: FIRST_WIN_TITLE,
+          options: ["Once", "Twice"],
+        },
+      },
+      devpilot.ipcSocketPath,
+    );
+
+    const pending = page.getByLabel(FIRST_WIN_TITLE);
+    await expect(pending).toBeVisible({ timeout: 15_000 });
+
+    const linePromise = collector.waitForLine();
+    await page.getByRole("button", { name: "Once" }).click();
+
+    const expectedLine = stringifyActionResponsePayload(
+      FIRST_WIN_SESSION,
+      FIRST_WIN_ACTION,
+      "Once",
+    );
+    await expect(linePromise).resolves.toBe(expectedLine);
+    await expect(pending).toBeHidden();
+
+    await page.evaluate(
+      ([sessionId, actionId]) => {
+        window.devpilot.respondToPendingAction(sessionId, actionId, "Once");
+      },
+      [FIRST_WIN_SESSION, FIRST_WIN_ACTION] as const,
+    );
+
+    await collector.expectNoFurtherConnections(3_000);
+  } finally {
+    await devpilot.close().catch(() => undefined);
+    await collector.close().catch(() => undefined);
+  }
+});

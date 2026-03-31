@@ -13,12 +13,19 @@ const sessionStore = createSessionStore();
 const actionResponseTransport = createActionResponseTransport(process.env);
 
 let mainWindow: BrowserWindow | null = null;
+let pendingExpirySweepTimer: ReturnType<typeof setInterval> | null = null;
 
 function broadcastSessions() {
   const win = mainWindow;
   if (!win || win.isDestroyed()) return;
   const payload: SessionRecord[] = sessionStore.getSessions();
   win.webContents.send("devpilot:sessions", payload);
+}
+
+function sweepExpiredPendingActions() {
+  if (sessionStore.expireStalePendingActions(Date.now())) {
+    broadcastSessions();
+  }
 }
 
 function wireActionResponseIpc() {
@@ -123,12 +130,21 @@ app.whenReady().then(() => {
   });
   createTray();
 
+  pendingExpirySweepTimer = setInterval(sweepExpiredPendingActions, 1_000);
+
   app.on("activate", () => {
     const win = getOrCreateMainWindow();
     if (!win.isVisible()) {
       win.show();
     }
   });
+});
+
+app.on("before-quit", () => {
+  if (pendingExpirySweepTimer !== null) {
+    clearInterval(pendingExpirySweepTimer);
+    pendingExpirySweepTimer = null;
+  }
 });
 
 app.on("window-all-closed", () => {

@@ -64,6 +64,33 @@ export function isResponseTarget(value: unknown): value is ResponseTarget {
   return true;
 }
 
+export type PendingCloseReason =
+  | "consumed_local"
+  | "consumed_remote"
+  | "expired"
+  | "cancelled";
+
+export const PENDING_CLOSE_REASONS: readonly PendingCloseReason[] = [
+  "consumed_local",
+  "consumed_remote",
+  "expired",
+  "cancelled",
+] as const;
+
+export interface PendingClosed {
+  actionId: string;
+  reason: PendingCloseReason;
+}
+
+export function isPendingClosed(value: unknown): value is PendingClosed {
+  if (!value || typeof value !== "object") return false;
+  const o = value as Record<string, unknown>;
+  if (typeof o.actionId !== "string") return false;
+  if (typeof o.reason !== "string") return false;
+  if (!(PENDING_CLOSE_REASONS as readonly string[]).includes(o.reason)) return false;
+  return true;
+}
+
 export interface SessionRecord {
   id: string;
   tool: string;

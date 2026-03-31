@@ -4,7 +4,7 @@ import { createSessionStore } from "../session/sessionStore";
 import { dispatchActionResponse } from "./dispatchActionResponse";
 
 describe("dispatchActionResponse", () => {
-  it("when pending matches without responseTarget: uses fallback transport, send then complete then broadcast", async () => {
+  it("when pending matches without responseTarget: uses fallback transport, send then close then broadcast", async () => {
     const store = createSessionStore();
     store.applyEvent({
       type: "status_change",
@@ -28,10 +28,10 @@ describe("dispatchActionResponse", () => {
     });
 
     const callOrder: string[] = [];
-    const origComplete = store.completePendingActionResponse.bind(store);
-    vi.spyOn(store, "completePendingActionResponse").mockImplementation((sid, aid) => {
-      callOrder.push("complete");
-      origComplete(sid, aid);
+    const origClose = store.closePendingAction.bind(store);
+    vi.spyOn(store, "closePendingAction").mockImplementation((sid, aid, reason) => {
+      callOrder.push("close");
+      origClose(sid, aid, reason);
     });
 
     const fromTargetSpy = vi.spyOn(
@@ -60,7 +60,7 @@ describe("dispatchActionResponse", () => {
     );
 
     expect(result).toBe(true);
-    expect(callOrder).toEqual(["send", "complete", "broadcast"]);
+    expect(callOrder).toEqual(["send", "close", "broadcast"]);
     expect(store.getSessions()[0].pendingActions).toBeUndefined();
     expect(transport.send).toHaveBeenCalledWith(expectedLine);
     expect(broadcastSessions).toHaveBeenCalledTimes(1);
@@ -143,7 +143,7 @@ describe("dispatchActionResponse", () => {
       },
     });
 
-    const completeSpy = vi.spyOn(store, "completePendingActionResponse");
+    const closeSpy = vi.spyOn(store, "closePendingAction");
     const transport = {
       send: vi.fn(async () => {
         throw new Error("network down");
@@ -155,12 +155,12 @@ describe("dispatchActionResponse", () => {
       dispatchActionResponse(store, transport, broadcastSessions, "s1", "act-1", "A"),
     ).rejects.toThrow("network down");
 
-    expect(completeSpy).not.toHaveBeenCalled();
+    expect(closeSpy).not.toHaveBeenCalled();
     expect(broadcastSessions).not.toHaveBeenCalled();
     expect(store.getSessions()[0].pendingActions).toHaveLength(1);
   });
 
-  it("when send succeeds: completePendingActionResponse is called only for (sessionId, actionId)", async () => {
+  it("when send succeeds: closePendingAction is called only for (sessionId, actionId, consumed_local)", async () => {
     const store = createSessionStore();
     store.applyEvent({
       type: "status_change",
@@ -189,7 +189,7 @@ describe("dispatchActionResponse", () => {
       },
     });
 
-    const completeSpy = vi.spyOn(store, "completePendingActionResponse");
+    const closeSpy = vi.spyOn(store, "closePendingAction");
     const transport = { send: vi.fn(async () => {}) };
     const broadcastSessions = vi.fn();
 
@@ -202,10 +202,112 @@ describe("dispatchActionResponse", () => {
       "OK",
     );
 
-    expect(completeSpy).toHaveBeenCalledTimes(1);
-    expect(completeSpy).toHaveBeenCalledWith("s1", "remove-me");
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(closeSpy).toHaveBeenCalledWith("s1", "remove-me", "consumed_local");
     const rec = store.getSessions()[0];
     expect(rec.pendingActions).toEqual([expect.objectContaining({ id: "keep" })]);
+  });
+
+  it("when action was already closed remotely: duplicate response is no-op, warns, no send or broadcast", async () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "act-1",
+        type: "single_choice",
+        title: "Pick",
+        options: ["A", "B"],
+      },
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingClosed: {
+        actionId: "act-1",
+        reason: "consumed_remote",
+      },
+    });
+
+    const transport = { send: vi.fn(async () => {}) };
+    const broadcastSessions = vi.fn();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = await dispatchActionResponse(
+      store,
+      transport,
+      broadcastSessions,
+      "s1",
+      "act-1",
+      "A",
+    );
+
+    expect(result).toBe(false);
+    expect(transport.send).not.toHaveBeenCalled();
+    expect(broadcastSessions).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[DevPilot] duplicate action_response ignored:",
+      "s1",
+      "act-1",
+    );
+
+    warnSpy.mockRestore();
+  });
+
+  it("when the same action is already in flight: ignores the second request before a second send", async () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "act-1",
+        type: "single_choice",
+        title: "Pick",
+        options: ["A", "B"],
+      },
+    });
+
+    let resolveSend: (() => void) | undefined;
+    const sendGate = new Promise<void>((resolve) => {
+      resolveSend = resolve;
+    });
+    const transport = {
+      send: vi.fn(async () => {
+        await sendGate;
+      }),
+    };
+    const broadcastSessions = vi.fn();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const first = dispatchActionResponse(store, transport, broadcastSessions, "s1", "act-1", "A");
+    const second = await dispatchActionResponse(
+      store,
+      transport,
+      broadcastSessions,
+      "s1",
+      "act-1",
+      "A",
+    );
+
+    expect(second).toBe(false);
+    expect(transport.send).toHaveBeenCalledTimes(1);
+    expect(broadcastSessions).not.toHaveBeenCalled();
+
+    resolveSend?.();
+
+    await expect(first).resolves.toBe(true);
+    expect(broadcastSessions).toHaveBeenCalledTimes(1);
+
+    warnSpy.mockRestore();
   });
 
   it("when pending does not match: returns false and does not call transport.send", async () => {
@@ -228,6 +330,7 @@ describe("dispatchActionResponse", () => {
       send: vi.fn(async () => {}),
     };
     const broadcastSessions = vi.fn();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const result = await dispatchActionResponse(
       store,
@@ -241,5 +344,8 @@ describe("dispatchActionResponse", () => {
     expect(result).toBe(false);
     expect(transport.send).not.toHaveBeenCalled();
     expect(broadcastSessions).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
+
+    warnSpy.mockRestore();
   });
 });

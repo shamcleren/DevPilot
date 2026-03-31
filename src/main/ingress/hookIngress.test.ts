@@ -204,4 +204,122 @@ describe("lineToSessionEvent", () => {
     expect(ev?.status).toBe("running");
     expect(ev).not.toHaveProperty("responseTarget");
   });
+
+  it("parses pendingClosed on canonical status_change", () => {
+    const pendingClosed = { actionId: "a1", reason: "expired" as const };
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        type: "status_change",
+        sessionId: "s-pc",
+        tool: "cursor",
+        status: "running",
+        timestamp: 11,
+        pendingClosed,
+      }),
+    );
+    expect(ev).toMatchObject({
+      sessionId: "s-pc",
+      status: "running",
+      pendingClosed,
+    });
+  });
+
+  it("treats pendingClosed null on canonical status_change as absent", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        type: "status_change",
+        sessionId: "s-pc-null",
+        tool: "cursor",
+        status: "running",
+        timestamp: 11.5,
+        pendingClosed: null,
+      }),
+    );
+    expect(ev).not.toBeNull();
+    expect(ev?.sessionId).toBe("s-pc-null");
+    expect(ev).not.toHaveProperty("pendingClosed");
+  });
+
+  it("rejects canonical status_change when pendingClosed is malformed", () => {
+    expect(
+      lineToSessionEvent(
+        JSON.stringify({
+          type: "status_change",
+          sessionId: "s-pc-bad",
+          tool: "cursor",
+          status: "running",
+          timestamp: 12,
+          pendingClosed: { actionId: "x", reason: "not-a-reason" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("ignores malformed pendingClosed on raw hook payload but keeps the event", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        hook_event_name: "StatusChange",
+        session_id: "c-pc",
+        status: "waiting",
+        pendingClosed: { actionId: 1, reason: "expired" },
+      }),
+    );
+    expect(ev).not.toBeNull();
+    expect(ev?.sessionId).toBe("c-pc");
+    expect(ev?.status).toBe("waiting");
+    expect(ev).not.toHaveProperty("pendingClosed");
+  });
+
+  it("treats pendingClosed null on raw hook payload as absent", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        hook_event_name: "StatusChange",
+        session_id: "c-pc-null",
+        status: "waiting",
+        pendingClosed: null,
+      }),
+    );
+    expect(ev).not.toBeNull();
+    expect(ev?.sessionId).toBe("c-pc-null");
+    expect(ev).not.toHaveProperty("pendingClosed");
+  });
+
+  it("reads pendingClosed from raw CodeBuddy payload when valid", () => {
+    const pendingClosed = { actionId: "b-a", reason: "cancelled" as const };
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        source: "codebuddy",
+        session_id: "b-pc",
+        state: "running",
+        pendingClosed,
+      }),
+    );
+    expect(ev?.pendingClosed).toEqual(pendingClosed);
+  });
+
+  it("keeps pendingAction and responseTarget when pendingClosed is present on canonical", () => {
+    const pendingAction = {
+      id: "combo",
+      type: "approval" as const,
+      title: "OK?",
+      options: ["Yes"],
+    };
+    const responseTarget = { mode: "socket" as const, socketPath: "/tmp/x.sock" };
+    const pendingClosed = { actionId: "other", reason: "consumed_remote" as const };
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        type: "status_change",
+        sessionId: "s-combo",
+        tool: "cursor",
+        status: "waiting",
+        timestamp: 13,
+        pendingAction,
+        responseTarget,
+        pendingClosed,
+      }),
+    );
+    expect(ev?.pendingAction).toEqual(pendingAction);
+    expect(ev?.responseTarget).toEqual(responseTarget);
+    expect(ev?.pendingClosed).toEqual(pendingClosed);
+  });
 });

@@ -12,6 +12,7 @@ DevPilot 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目
 - 鼠标移入后展开更多上下文
 - 支持 `approval` / `single_choice` / `multi_choice` 的项目内闭环
 - 通过 `scripts/bridge/run-blocking-hook.mjs` 与 `scripts/hooks/*` 将 `action_response` 按 `actionId` 回写到各 hook 进程挂起的 collector socket（同一 `sessionId` 下可多笔 pending 并存、互不串线）
+- **Pending 生命周期（Phase 1，有界清理）**：对同一 `actionId` 的重复 `action_response` 在首次成功写回后即被拒绝（first-win），避免重复写回；收到明确的按 action 关闭信号时，面板会移除对应 pending 卡片；若长期收不到关闭信号，pending 会在超时后从可操作 UI 中过期淡出。这是有界的陈旧 pending 清理，**不承诺**跨 IDE / hook 表面的完美一致状态。
 
 ## 当前边界
 

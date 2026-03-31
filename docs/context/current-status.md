@@ -39,6 +39,13 @@ End-to-end path for tool hooks:
 
 Same `sessionId` may have multiple pending actions at once; each keeps its own optional `responseTarget`, so concurrent blocking hooks receive only their matching `actionId` line.
 
+**Pending lifecycle cleanup (Phase 1, bounded):**
+
+- Duplicate `action_response` payloads for the same `actionId` are rejected after the first successful handling (first-win).
+- DevPilot removes pending cards when an explicit per-action close signal arrives from the upstream flow.
+- When no close signal arrives, pending cards can expire out of the actionable UI after a timeout.
+- This is intentional **bounded stale-pending cleanup** for the panel; it is **not** a guarantee of perfect cross-surface consistency with every IDE or hook process.
+
 ## Confirmed Product Decisions
 
 - Phase 1 is about unified monitoring first

@@ -1,4 +1,4 @@
-import type { ResponseTarget } from "../../shared/sessionTypes";
+import type { PendingCloseReason, ResponseTarget } from "../../shared/sessionTypes";
 import type { ActionResponseTransport } from "./actionResponseTransport";
 import { createActionResponseTransportFromResponseTarget } from "./createActionResponseTransport";
 
@@ -13,8 +13,16 @@ export type ActionResponseSessionStore = {
     actionId: string,
     option: string,
   ): PendingActionResponsePrep | null;
-  completePendingActionResponse(sessionId: string, actionId: string): void;
+  closePendingAction(sessionId: string, actionId: string, reason: PendingCloseReason): void;
+  /** True when the action is no longer pending because it was already closed (e.g. first-win consumed). */
+  isPendingActionClosed(sessionId: string, actionId: string): boolean;
 };
+
+const inFlightPendingActionResponseKeys = new Set<string>();
+
+function getPendingActionResponseKey(sessionId: string, actionId: string): string {
+  return `${sessionId}\u0000${actionId}`;
+}
 
 export async function dispatchActionResponse(
   sessionStore: ActionResponseSessionStore,
@@ -24,18 +32,36 @@ export async function dispatchActionResponse(
   actionId: string,
   option: string,
 ): Promise<boolean> {
-  const prep = sessionStore.preparePendingActionResponse(sessionId, actionId, option);
-  if (!prep) {
+  const inFlightKey = getPendingActionResponseKey(sessionId, actionId);
+  if (inFlightPendingActionResponseKeys.has(inFlightKey)) {
+    console.warn(
+      "[DevPilot] action_response ignored (already in flight):",
+      `sessionId=${sessionId} actionId=${actionId}`,
+    );
     return false;
   }
 
-  const transport =
-    prep.responseTarget !== undefined
-      ? createActionResponseTransportFromResponseTarget(prep.responseTarget)
-      : fallbackTransport;
+  const prep = sessionStore.preparePendingActionResponse(sessionId, actionId, option);
+  if (!prep) {
+    if (sessionStore.isPendingActionClosed(sessionId, actionId)) {
+      console.warn("[DevPilot] duplicate action_response ignored:", sessionId, actionId);
+    }
+    return false;
+  }
 
-  await transport.send(prep.line);
-  sessionStore.completePendingActionResponse(sessionId, actionId);
-  broadcastSessions();
-  return true;
+  inFlightPendingActionResponseKeys.add(inFlightKey);
+
+  try {
+    const transport =
+      prep.responseTarget !== undefined
+        ? createActionResponseTransportFromResponseTarget(prep.responseTarget)
+        : fallbackTransport;
+
+    await transport.send(prep.line);
+    sessionStore.closePendingAction(sessionId, actionId, "consumed_local");
+    broadcastSessions();
+    return true;
+  } finally {
+    inFlightPendingActionResponseKeys.delete(inFlightKey);
+  }
 }

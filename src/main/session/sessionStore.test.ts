@@ -252,6 +252,8 @@ describe("createSessionStore", () => {
     expect(rec.pendingActions).toEqual([
       expect.objectContaining({ id: "keep-me" }),
     ]);
+    expect(store.isPendingActionClosed("s1", "remove-me")).toBe(true);
+    expect(store.preparePendingActionResponse("s1", "remove-me", "OK")).toBeNull();
   });
 
   it("clears all pending when envelope sends pendingAction null", () => {
@@ -288,6 +290,8 @@ describe("createSessionStore", () => {
       pendingAction: null,
     });
     expect(store.getSessions()[0].pendingActions).toBeUndefined();
+    expect(store.isPendingActionClosed("s1", "a1")).toBe(true);
+    expect(store.isPendingActionClosed("s1", "a2")).toBe(true);
   });
 
   it("respondToPendingAction clears pending and returns action_response JSON", () => {
@@ -348,23 +352,232 @@ describe("createSessionStore", () => {
 
   it("respondToPendingAction refreshes updatedAt on success", () => {
     vi.useFakeTimers();
-    vi.setSystemTime(1000);
+    try {
+      vi.setSystemTime(1000);
+      const store = createSessionStore();
+      store.applyEvent({
+        sessionId: "s1",
+        tool: "cursor",
+        status: "waiting",
+        timestamp: 1000,
+        pendingAction: {
+          id: "act-1",
+          type: "approval",
+          title: "T",
+          options: ["OK"],
+        },
+      });
+      vi.setSystemTime(5000);
+      store.respondToPendingAction("s1", "act-1", "OK");
+      expect(store.getSessions()[0].updatedAt).toBe(5000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("closePendingAction removes only the matching action", () => {
     const store = createSessionStore();
     store.applyEvent({
       sessionId: "s1",
       tool: "cursor",
       status: "waiting",
-      timestamp: 1000,
+      timestamp: 1,
       pendingAction: {
-        id: "act-1",
+        id: "a1",
+        type: "approval",
+        title: "First",
+        options: ["OK"],
+      },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: {
+        id: "a2",
+        type: "approval",
+        title: "Second",
+        options: ["OK"],
+      },
+    });
+    store.closePendingAction("s1", "a1", "cancelled");
+    const rec = store.getSessions()[0];
+    expect(rec.pendingActions).toEqual([expect.objectContaining({ id: "a2" })]);
+    expect(store.isPendingActionClosed("s1", "a1")).toBe(true);
+    expect(store.isPendingActionClosed("s1", "a2")).toBe(false);
+  });
+
+  it("pendingClosed on an event removes only that action when pendingAction is omitted", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "a1",
+        type: "approval",
+        title: "First",
+        options: ["OK"],
+      },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: {
+        id: "a2",
+        type: "approval",
+        title: "Second",
+        options: ["OK"],
+      },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 3,
+      pendingClosed: { actionId: "a1", reason: "consumed_remote" },
+    });
+    const rec = store.getSessions()[0];
+    expect(rec.pendingActions).toHaveLength(1);
+    expect(rec.pendingActions).toEqual([expect.objectContaining({ id: "a2" })]);
+    expect(store.isPendingActionClosed("s1", "a1")).toBe(true);
+  });
+
+  it("records pendingClosed even when the action is not currently pending", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "a1",
+        type: "approval",
+        title: "First",
+        options: ["OK"],
+      },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "running",
+      timestamp: 2,
+      pendingClosed: { actionId: "missing-action", reason: "consumed_remote" },
+    });
+    expect(store.isPendingActionClosed("s1", "missing-action")).toBe(true);
+    expect(store.getSessions()[0].pendingActions).toEqual([
+      expect.objectContaining({ id: "a1" }),
+    ]);
+  });
+
+  it("expireStalePendingActions removes expired pendings and marks them closed", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1_000,
+      pendingAction: {
+        id: "stale",
+        type: "approval",
+        title: "Old",
+        options: ["OK"],
+      },
+      responseTarget: { mode: "socket", socketPath: "/a.sock", timeoutMs: 100 },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1_000,
+      pendingAction: {
+        id: "fresh",
+        type: "approval",
+        title: "New",
+        options: ["OK"],
+      },
+      responseTarget: { mode: "socket", socketPath: "/b.sock", timeoutMs: 10_000 },
+    });
+    expect(store.expireStalePendingActions(1_500)).toBe(true);
+    const rec = store.getSessions()[0];
+    expect(rec.pendingActions?.map((a) => a.id)).toEqual(["fresh"]);
+    expect(store.isPendingActionClosed("s1", "stale")).toBe(true);
+    expect(store.isPendingActionClosed("s1", "fresh")).toBe(false);
+    expect(store.preparePendingActionResponse("s1", "stale", "OK")).toBeNull();
+  });
+
+  it("expireStalePendingActions returns false when nothing expires", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1_000,
+      pendingAction: {
+        id: "fresh",
+        type: "approval",
+        title: "New",
+        options: ["OK"],
+      },
+      responseTarget: { mode: "socket", socketPath: "/b.sock", timeoutMs: 10_000 },
+    });
+
+    expect(store.expireStalePendingActions(1_500)).toBe(false);
+    expect(store.getSessions()[0].pendingActions?.map((a) => a.id)).toEqual(["fresh"]);
+  });
+
+  it("preparePendingActionResponse returns null after closePendingAction (duplicate prep)", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "x",
         type: "approval",
         title: "T",
         options: ["OK"],
       },
     });
-    vi.setSystemTime(5000);
-    store.respondToPendingAction("s1", "act-1", "OK");
-    expect(store.getSessions()[0].updatedAt).toBe(5000);
-    vi.useRealTimers();
+    expect(store.preparePendingActionResponse("s1", "x", "OK")).not.toBeNull();
+    store.closePendingAction("s1", "x", "cancelled");
+    expect(store.preparePendingActionResponse("s1", "x", "OK")).toBeNull();
+  });
+
+  it("re-upsert after close clears closed ledger and allows prepare again", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "x",
+        type: "approval",
+        title: "T",
+        options: ["OK"],
+      },
+    });
+    store.closePendingAction("s1", "x", "cancelled");
+    expect(store.isPendingActionClosed("s1", "x")).toBe(true);
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: {
+        id: "x",
+        type: "approval",
+        title: "Again",
+        options: ["OK"],
+      },
+    });
+    expect(store.isPendingActionClosed("s1", "x")).toBe(false);
+    expect(store.preparePendingActionResponse("s1", "x", "OK")).not.toBeNull();
   });
 });
