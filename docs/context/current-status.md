@@ -12,7 +12,7 @@
 ### App Shell
 
 - Electron main process, preload bridge, tray, and floating window shell
-- Renderer monitoring panel with status bar, session rows, and hover details
+- Renderer monitoring panel with status bar, session rows, hover details, and an in-app integration settings panel
 - Shared session and payload types in `src/shared/`
 
 ### Monitoring Flow
@@ -23,9 +23,23 @@
 
 ### Current Adapters
 
-- Cursor normalizer
+- Cursor normalizer plus a minimal official Cursor hook bridge for lifecycle events (`sessionStart` / `stop`)
 - CodeBuddy normalizer with fixture-driven CLI / hook calibration for explicit status fields plus documented hook events (`SessionStart`, `Notification`, `UserPromptSubmit`, `PreToolUse`, `SessionEnd`)
 - PyCharm is expected to integrate through CodeBuddy plugin payloads rather than a separate adapter
+
+### Integration Settings
+
+- Main process diagnostics now expose the current DevPilot listener endpoint, runtime dependency status (`node` / `python3`), and per-agent hook install status
+- UI can write or repair user-level hook config for:
+  - `Cursor` via `~/.cursor/hooks.json`
+  - `CodeBuddy` via `~/.codebuddy/settings.json`
+- Writes are idempotent and create a backup before overwriting an existing file
+- Invalid or incompatible existing config structures are reported back to the UI instead of being force-overwritten
+
+### Test Build
+
+- A macOS internal test build can be produced via `npm run dist:mac`
+- Current artifacts are unsigned / ad-hoc and land under `release/`
 
 ### Pending Action Loop
 
@@ -76,16 +90,19 @@ npm test
 npm run test:e2e
 npm run lint
 npm run build
+npm run dist:mac
 ```
 
 ## Known Gaps
 
 - PyCharm / CodeBuddy plugin-specific payloads are still outside the calibrated mainline; this round only stabilizes CodeBuddy CLI / hook payloads
+- Cursor auto-config currently enables only the minimal lifecycle hook bridge; it does not recreate the full pending-action semantics from the existing custom `StatusChange` path
+- The current macOS test build still depends on locally available `node` and `python3` for hook wrapper execution, and does not include formal signing / notarization
 - Activity flow in the UI is still shallow compared with the full design intent
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
 ## Recommended Next Steps
 
 1. Add richer activity events into session state and renderer
-2. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix
-3. Add issue tracking / project board after GitHub project scopes are granted
+2. Package hook forwarding into a more self-contained runtime so test builds do not depend on system `node` / `python3`
+3. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix

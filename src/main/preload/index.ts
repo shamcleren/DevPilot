@@ -1,4 +1,8 @@
 import { contextBridge, ipcRenderer } from "electron";
+import type {
+  IntegrationDiagnostics,
+  IntegrationInstallResult,
+} from "../../shared/integrationTypes";
 import type { SessionRecord } from "../../shared/sessionTypes";
 
 contextBridge.exposeInMainWorld("devpilot", {
@@ -18,6 +22,16 @@ contextBridge.exposeInMainWorld("devpilot", {
     return () => {
       ipcRenderer.removeListener(channel, listener);
     };
+  },
+  getIntegrationDiagnostics() {
+    return ipcRenderer.invoke(
+      "devpilot:get-integration-diagnostics",
+    ) as Promise<IntegrationDiagnostics>;
+  },
+  installIntegrationHooks(agentId: "cursor" | "codebuddy") {
+    return ipcRenderer.invoke("devpilot:install-integration-hooks", {
+      agentId,
+    }) as Promise<IntegrationInstallResult>;
   },
   respondToPendingAction(sessionId: string, actionId: string, option: string) {
     ipcRenderer.send("devpilot:action-response", { sessionId, actionId, option });

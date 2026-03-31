@@ -4,10 +4,12 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     ignores: [
+      ".worktrees/**",
       "**/node_modules/**",
       "**/dist/**",
       "**/dist-electron/**",
       "**/out/**",
+      "**/release/**",
       "scripts/**",
     ],
   },

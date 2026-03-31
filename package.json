@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never",
     "preview": "electron-vite preview",
     "test": "vitest run",
     "test:e2e": "npm run build && playwright test -c playwright.e2e.config.ts",
@@ -15,7 +16,6 @@
     "lint": "eslint . --ext .ts,.tsx"
   },
   "dependencies": {
-    "electron": "^41.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
@@ -26,6 +26,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.27",
+    "electron": "^41.1.0",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
     "eslint": "^9.39.4",
     "playwright": "^1.58.2",

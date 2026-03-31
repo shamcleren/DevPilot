@@ -1,0 +1,25 @@
+appId: ai.shamcleren.devpilot
+productName: DevPilot
+directories:
+  output: release
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: scripts
+    to: scripts
+    filter:
+      - bridge/**/*
+      - hooks/**/*
+asar: true
+npmRebuild: false
+mac:
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  category: public.app-category.developer-tools
+  target:
+    - target: zip
+      arch:
+        - arm64
+    - target: dmg
+      arch:
+        - arm64

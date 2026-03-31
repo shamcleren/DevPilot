@@ -1,8 +1,10 @@
 import { BrowserWindow, app, ipcMain } from "electron";
 import fs from "node:fs";
+import path from "node:path";
 import { createActionResponseTransport } from "./actionResponse/createActionResponseTransport";
 import { dispatchActionResponse } from "./actionResponse/dispatchActionResponse";
 import { lineToSessionEvent } from "./ingress/hookIngress";
+import { createIntegrationService } from "./integrations/integrationService";
 import { createIpcHub } from "./ipc/ipcHub";
 import { createSessionStore } from "./session/sessionStore";
 import { createTray } from "./tray/createTray";
@@ -14,6 +16,12 @@ const actionResponseTransport = createActionResponseTransport(process.env);
 
 let mainWindow: BrowserWindow | null = null;
 let pendingExpirySweepTimer: ReturnType<typeof setInterval> | null = null;
+
+function resolveHookScriptsRoot() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "scripts", "hooks")
+    : path.join(app.getAppPath(), "scripts", "hooks");
+}
 
 function broadcastSessions() {
   const win = mainWindow;
@@ -28,8 +36,25 @@ function sweepExpiredPendingActions() {
   }
 }
 
-function wireActionResponseIpc() {
+function wireActionResponseIpc(
+  integrationService: ReturnType<typeof createIntegrationService>,
+) {
   ipcMain.handle("devpilot:get-sessions", () => sessionStore.getSessions());
+  ipcMain.handle("devpilot:get-integration-diagnostics", () =>
+    integrationService.getDiagnostics(),
+  );
+  ipcMain.handle("devpilot:install-integration-hooks", (_event, payload: unknown) => {
+    const agentId =
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as Record<string, unknown>).agentId === "string"
+        ? (payload as Record<string, unknown>).agentId
+        : "";
+    if (agentId !== "cursor" && agentId !== "codebuddy") {
+      throw new Error("unsupported integration agent");
+    }
+    return integrationService.installHooks(agentId);
+  });
 
   ipcMain.on("devpilot:action-response", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object") return;
@@ -65,11 +90,12 @@ function getOrCreateMainWindow(): BrowserWindow {
   return win;
 }
 
-function wireIpcHub() {
+function wireIpcHub(integrationService: ReturnType<typeof createIntegrationService>) {
   const { server } = createIpcHub((line) => {
     const event = lineToSessionEvent(line);
     if (event) {
       sessionStore.applyEvent(event);
+      integrationService.recordEvent(event.tool, event.status, event.timestamp);
       broadcastSessions();
     }
   });
@@ -96,6 +122,10 @@ function wireIpcHub() {
     }
 
     server.listen(socketPath, () => {
+      integrationService.setListenerDiagnostics({
+        mode: "socket",
+        socketPath,
+      });
       console.log(`[DevPilot IPC] listening on unix socket ${socketPath}`);
     });
   } else {
@@ -105,6 +135,10 @@ function wireIpcHub() {
     const host = "127.0.0.1";
 
     if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+      integrationService.setListenerDiagnostics({
+        mode: "unavailable",
+        message: "DEVPILOT_IPC_PORT 无效",
+      });
       console.error(
         "[DevPilot IPC] invalid DEVPILOT_IPC_PORT; expected 1–65535, got:",
         process.env.DEVPILOT_IPC_PORT,
@@ -113,6 +147,11 @@ function wireIpcHub() {
     }
 
     server.listen(port, host, () => {
+      integrationService.setListenerDiagnostics({
+        mode: "tcp",
+        host,
+        port,
+      });
       const addr = server.address();
       if (addr && typeof addr !== "string") {
         console.log(`[DevPilot IPC] listening on ${host}:${addr.port}`);
@@ -122,8 +161,14 @@ function wireIpcHub() {
 }
 
 app.whenReady().then(() => {
-  wireActionResponseIpc();
-  wireIpcHub();
+  const integrationService = createIntegrationService({
+    homeDir: app.getPath("home"),
+    hookScriptsRoot: resolveHookScriptsRoot(),
+    packaged: app.isPackaged,
+  });
+
+  wireActionResponseIpc(integrationService);
+  wireIpcHub(integrationService);
   const win = getOrCreateMainWindow();
   win.webContents.once("dom-ready", () => {
     broadcastSessions();
