@@ -46,11 +46,29 @@ export function isPendingAction(value: unknown): value is PendingAction {
   return true;
 }
 
+/** 外部 action_response 回写路由目标（bridge / hook 侧可选携带） */
+export interface ResponseTarget {
+  mode: "socket";
+  socketPath: string;
+  timeoutMs?: number;
+}
+
+export function isResponseTarget(value: unknown): value is ResponseTarget {
+  if (!value || typeof value !== "object") return false;
+  const o = value as Record<string, unknown>;
+  if (o.mode !== "socket") return false;
+  if (typeof o.socketPath !== "string") return false;
+  if ("timeoutMs" in o && o.timeoutMs !== undefined && typeof o.timeoutMs !== "number") {
+    return false;
+  }
+  return true;
+}
+
 export interface SessionRecord {
   id: string;
   tool: string;
   status: SessionStatus;
   task?: string;
   updatedAt: number;
-  pendingAction?: PendingAction;
+  pendingActions?: PendingAction[];
 }

@@ -9,12 +9,14 @@ const currentSessions: SessionRecord[] = [
     status: "waiting",
     task: "review change",
     updatedAt: 1_700_000_000_000,
-    pendingAction: {
-      id: "a1",
-      type: "single_choice",
-      title: "Pick one",
-      options: ["Approve", "Reject"],
-    },
+    pendingActions: [
+      {
+        id: "a1",
+        type: "single_choice",
+        title: "Pick one",
+        options: ["Approve", "Reject"],
+      },
+    ],
   },
 ];
 
@@ -27,10 +29,12 @@ describe("sessionBootstrap", () => {
       id: "s1",
       task: "review change",
       hoverSummary: "review change",
-      pendingAction: {
-        id: "a1",
-        title: "Pick one",
-      },
+      pendingActions: [
+        {
+          id: "a1",
+          title: "Pick one",
+        },
+      ],
     });
   });
 

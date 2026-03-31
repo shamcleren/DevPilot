@@ -62,25 +62,23 @@ export function SessionRow({ session, onRespond }: SessionRowProps) {
         <span className="duration">{session.durationLabel}</span>
       </div>
       <HoverDetails activities={session.activities} summary={session.hoverSummary} />
-      {session.pendingAction ? (
-        <div className="pending-action" aria-label={session.pendingAction.title}>
-          <div className="pending-action__title">{session.pendingAction.title}</div>
+      {(session.pendingActions ?? []).map((action) => (
+        <div key={action.id} className="pending-action" aria-label={action.title}>
+          <div className="pending-action__title">{action.title}</div>
           <div className="pending-action__actions">
-            {session.pendingAction.options.map((option) => (
+            {action.options.map((option) => (
               <button
-                key={`${session.pendingAction!.id}:${option}`}
+                key={`${action.id}:${option}`}
                 type="button"
                 className="pending-action__btn"
-                onClick={() =>
-                  onRespond(session.id, session.pendingAction!.id, option)
-                }
+                onClick={() => onRespond(session.id, action.id, option)}
               >
                 {option}
               </button>
             ))}
           </div>
         </div>
-      ) : null}
+      ))}
     </div>
   );
 }

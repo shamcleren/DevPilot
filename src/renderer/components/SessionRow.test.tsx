@@ -17,17 +17,19 @@ function baseRow(overrides: Partial<MonitorSessionRow> = {}): MonitorSessionRow 
 }
 
 describe("SessionRow pending action", () => {
-  it("renders option buttons when pendingAction is set", () => {
+  it("renders option buttons when pendingActions has one item", () => {
     const onRespond = vi.fn();
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
-          pendingAction: {
-            id: "a1",
-            type: "approval",
-            title: "Proceed?",
-            options: ["Yes", "No"],
-          },
+          pendingActions: [
+            {
+              id: "a1",
+              type: "approval",
+              title: "Proceed?",
+              options: ["Yes", "No"],
+            },
+          ],
         })}
         onRespond={onRespond}
       />,
@@ -37,9 +39,48 @@ describe("SessionRow pending action", () => {
     expect(html).toContain(">No<");
   });
 
-  it("omits pending action UI when absent", () => {
+  it("renders two pending action cards with buttons when pendingActions has two items", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          pendingActions: [
+            {
+              id: "a1",
+              type: "approval",
+              title: "First decision",
+              options: ["OK", "Cancel"],
+            },
+            {
+              id: "a2",
+              type: "single_choice",
+              title: "Second decision",
+              options: ["A", "B"],
+            },
+          ],
+        })}
+        onRespond={vi.fn()}
+      />,
+    );
+    expect(html).toContain("First decision");
+    expect(html).toContain("Second decision");
+    expect(html).toContain(">OK<");
+    expect(html).toContain(">Cancel<");
+    expect(html).toContain(">A<");
+    expect(html).toContain(">B<");
+    const cards = html.match(/class="pending-action"/g);
+    expect(cards).toHaveLength(2);
+  });
+
+  it("omits pending action UI when pendingActions is absent", () => {
     const html = renderToStaticMarkup(
       <SessionRow session={baseRow()} onRespond={vi.fn()} />,
+    );
+    expect(html).not.toContain("pending-action__title");
+  });
+
+  it("omits pending action UI when pendingActions is empty", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow session={baseRow({ pendingActions: [] })} onRespond={vi.fn()} />,
     );
     expect(html).not.toContain("pending-action__title");
   });

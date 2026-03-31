@@ -19,7 +19,7 @@ DevPilot is a floating monitoring panel for multiple IDEs and AI agents. Phase 1
 - Electron + React + TypeScript app builds and tests successfully
 - Cursor / CodeBuddy upstream hook events are wired in
 - Pending action loop is implemented inside the app
-- External `action_response` write-back is not finished yet
+- External `action_response` write-back is implemented: blocking hooks inject per-event `responseTarget` sockets; main dispatches responses by matching `sessionId` + `actionId` (multiple pending actions per session are supported)
 
 ## Commands
 
@@ -29,6 +29,7 @@ Run these from the repository root:
 npm ci
 npm run dev
 npm test
+npm run test:e2e
 npm run lint
 npm run build
 ```
@@ -43,7 +44,6 @@ npm run build
 
 ## Next Priorities
 
-- Finish external `action_response` delivery back to tools
 - Expand richer activity flow into the UI
 - Calibrate real CodeBuddy hook payloads
 - Add more adapters after the current protocol is stable

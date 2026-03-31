@@ -20,4 +20,4 @@ if [[ -z "${payload}" ]]; then
   exit 1
 fi
 
-exec node "./scripts/bridge/send-event.mjs" "$payload"
+exec node "./scripts/bridge/run-blocking-hook.mjs" "$payload"

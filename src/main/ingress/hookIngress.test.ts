@@ -150,4 +150,58 @@ describe("lineToSessionEvent", () => {
     );
     expect(ev?.pendingAction).toBeNull();
   });
+
+  it("parses legal responseTarget on canonical status_change", () => {
+    const responseTarget = {
+      mode: "socket" as const,
+      socketPath: "/tmp/devpilot.sock",
+      timeoutMs: 25000,
+    };
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        type: "status_change",
+        sessionId: "s-rt",
+        tool: "cursor",
+        status: "waiting",
+        timestamp: 9,
+        responseTarget,
+      }),
+    );
+    expect(ev).toMatchObject({
+      sessionId: "s-rt",
+      status: "waiting",
+      responseTarget,
+    });
+  });
+
+  it("rejects canonical status_change when pendingAction is null but responseTarget is invalid", () => {
+    expect(
+      lineToSessionEvent(
+        JSON.stringify({
+          type: "status_change",
+          sessionId: "s-rt-null-pa",
+          tool: "cursor",
+          status: "running",
+          timestamp: 10,
+          pendingAction: null,
+          responseTarget: { mode: "not-socket", socketPath: "/x" },
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it("ignores illegal responseTarget on raw hook payload but keeps the event", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        hook_event_name: "StatusChange",
+        session_id: "c-rt",
+        status: "running",
+        responseTarget: { mode: "not-socket", socketPath: "/x" },
+      }),
+    );
+    expect(ev).not.toBeNull();
+    expect(ev?.sessionId).toBe("c-rt");
+    expect(ev?.status).toBe("running");
+    expect(ev).not.toHaveProperty("responseTarget");
+  });
 });

@@ -1,26 +1,41 @@
+import type { ResponseTarget } from "../../shared/sessionTypes";
 import type { ActionResponseTransport } from "./actionResponseTransport";
+import { createActionResponseTransportFromResponseTarget } from "./createActionResponseTransport";
+
+export type PendingActionResponsePrep = {
+  line: string;
+  responseTarget?: ResponseTarget;
+};
 
 export type ActionResponseSessionStore = {
-  respondToPendingAction(
+  preparePendingActionResponse(
     sessionId: string,
     actionId: string,
     option: string,
-  ): string | null;
+  ): PendingActionResponsePrep | null;
+  completePendingActionResponse(sessionId: string, actionId: string): void;
 };
 
 export async function dispatchActionResponse(
   sessionStore: ActionResponseSessionStore,
-  transport: ActionResponseTransport,
+  fallbackTransport: ActionResponseTransport,
   broadcastSessions: () => void,
   sessionId: string,
   actionId: string,
   option: string,
 ): Promise<boolean> {
-  const line = sessionStore.respondToPendingAction(sessionId, actionId, option);
-  if (!line) {
+  const prep = sessionStore.preparePendingActionResponse(sessionId, actionId, option);
+  if (!prep) {
     return false;
   }
+
+  const transport =
+    prep.responseTarget !== undefined
+      ? createActionResponseTransportFromResponseTarget(prep.responseTarget)
+      : fallbackTransport;
+
+  await transport.send(prep.line);
+  sessionStore.completePendingActionResponse(sessionId, actionId);
   broadcastSessions();
-  await transport.send(line);
   return true;
 }

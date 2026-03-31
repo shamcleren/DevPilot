@@ -13,3 +13,4 @@ coverage
 # Playwright (E2E)
 test-results/
 playwright-report/
+.worktrees/

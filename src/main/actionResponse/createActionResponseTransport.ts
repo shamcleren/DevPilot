@@ -1,4 +1,5 @@
 import net from "node:net";
+import type { ResponseTarget } from "../../shared/sessionTypes";
 import type { ActionResponseTransport } from "./actionResponseTransport";
 
 const ACTION_RESPONSE_SOCKET_TIMEOUT_MS = 1_000;
@@ -13,9 +14,22 @@ function createLogTransport(): ActionResponseTransport {
   };
 }
 
+function resolveSocketTimeoutMs(overrideMs?: number): number {
+  if (
+    typeof overrideMs === "number" &&
+    Number.isFinite(overrideMs) &&
+    overrideMs > 0
+  ) {
+    return overrideMs;
+  }
+  return ACTION_RESPONSE_SOCKET_TIMEOUT_MS;
+}
+
 function createSocketTransport(
   options: net.NetConnectOpts,
+  timeoutOverrideMs?: number,
 ): ActionResponseTransport {
+  const effectiveTimeoutMs = resolveSocketTimeoutMs(timeoutOverrideMs);
   return {
     async send(line: string) {
       const payload = `${line}\n`;
@@ -59,10 +73,10 @@ function createSocketTransport(
           socket.destroy();
           finish(
             new Error(
-              `[DevPilot] action_response socket send timed out after ${ACTION_RESPONSE_SOCKET_TIMEOUT_MS}ms`,
+              `[DevPilot] action_response socket send timed out after ${effectiveTimeoutMs}ms`,
             ),
           );
-        }, ACTION_RESPONSE_SOCKET_TIMEOUT_MS);
+        }, effectiveTimeoutMs);
 
         socket.on("error", onError);
       });
@@ -76,6 +90,13 @@ function createTcpSocketTransport(host: string, port: number): ActionResponseTra
 
 function createUnixSocketTransport(socketPath: string): ActionResponseTransport {
   return createSocketTransport({ path: socketPath });
+}
+
+/** 基于 {@link ResponseTarget} 构建一次性 socket transport（与 env 模式共用发送与超时逻辑） */
+export function createActionResponseTransportFromResponseTarget(
+  target: ResponseTarget,
+): ActionResponseTransport {
+  return createSocketTransport({ path: target.socketPath }, target.timeoutMs);
 }
 
 export function createActionResponseTransport(

@@ -33,11 +33,11 @@
 - `single_choice`
 - `multi_choice`
 
-Current state only guarantees the in-app loop:
+End-to-end path for tool hooks:
 
-`renderer -> preload -> main -> action_response payload construction`
+`renderer -> preload -> main -> action_response line` → connect to the `responseTarget.socketPath` stored on that pending action (or env fallback socket when no target is set).
 
-The response is not yet fully delivered back to external tool hooks.
+Same `sessionId` may have multiple pending actions at once; each keeps its own optional `responseTarget`, so concurrent blocking hooks receive only their matching `actionId` line.
 
 ## Confirmed Product Decisions
 
@@ -66,20 +66,19 @@ Run from repo root:
 
 ```bash
 npm test
+npm run test:e2e
 npm run lint
 npm run build
 ```
 
 ## Known Gaps
 
-- External `action_response` write-back is not finished
 - CodeBuddy real-world payload shapes still need live calibration
 - Activity flow in the UI is still shallow compared with the full design intent
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
 ## Recommended Next Steps
 
-1. Finish external `action_response` delivery
-2. Add richer activity events into session state and renderer
-3. Verify real Cursor / CodeBuddy / PyCharm integration payloads
-4. Add issue tracking / project board after GitHub project scopes are granted
+1. Add richer activity events into session state and renderer
+2. Verify real Cursor / CodeBuddy / PyCharm integration payloads
+3. Add issue tracking / project board after GitHub project scopes are granted

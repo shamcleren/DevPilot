@@ -3,8 +3,8 @@
  * Task 5：status_change 可携带 pendingAction（审批 / 结构化选项）。
  */
 
-import type { PendingAction } from "../../shared/sessionTypes";
-import { isPendingAction } from "../../shared/sessionTypes";
+import type { PendingAction, ResponseTarget } from "../../shared/sessionTypes";
+import { isPendingAction, isResponseTarget } from "../../shared/sessionTypes";
 
 export type UpstreamEventType = "status_change";
 
@@ -24,6 +24,8 @@ export interface StatusChangeUpstreamEvent {
   meta?: Record<string, unknown>;
   /** 待处理动作；null 表示清除 */
   pendingAction?: PendingAction | null;
+  /** 可选：action_response 回写目标 */
+  responseTarget?: ResponseTarget;
 }
 
 export type UpstreamEventEnvelope = StatusChangeUpstreamEvent;
@@ -43,8 +45,10 @@ export function isStatusChangeUpstreamEvent(
     return false;
   }
   if ("pendingAction" in o) {
-    if (o.pendingAction === null) return true;
-    if (!isPendingAction(o.pendingAction)) return false;
+    if (o.pendingAction !== null && !isPendingAction(o.pendingAction)) return false;
+  }
+  if ("responseTarget" in o && o.responseTarget !== undefined) {
+    if (!isResponseTarget(o.responseTarget)) return false;
   }
   return true;
 }

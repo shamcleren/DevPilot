@@ -11,10 +11,10 @@ DevPilot 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目
 - 默认态直接看到全部任务状态
 - 鼠标移入后展开更多上下文
 - 支持 `approval` / `single_choice` / `multi_choice` 的项目内闭环
+- 通过 `scripts/bridge/run-blocking-hook.mjs` 与 `scripts/hooks/*` 将 `action_response` 按 `actionId` 回写到各 hook 进程挂起的 collector socket（同一 `sessionId` 下可多笔 pending 并存、互不串线）
 
 ## 当前边界
 
-- 还没有把 `action_response` 真正回写给外部工具的阻塞 Hook
 - 还没有实现自由文本输入
 - 还没有覆盖精确 terminal pane 跳转、深度窗口控制
 - CodeBuddy 的真实 Hook 字段仍需要联调校准
@@ -99,9 +99,9 @@ npm run build
 
 当前 pending action 的响应链路是：
 
-`renderer -> preload -> main -> action_response payload`
+`renderer -> preload -> main -> action_response` →（按 pending 上的 `responseTarget`）→ 外部 hook / bridge 进程
 
-也就是说，第一阶段已经完成“应用内闭环”，但还没有完成“外部工具回灌闭环”。
+当事件未携带 `responseTarget` 时，可回退到环境变量配置的默认 socket（如 E2E collector）。
 
 ## 测试范围
 
@@ -110,14 +110,14 @@ npm run build
 - Cursor / CodeBuddy normalizer
 - IPC Hub 行协议与 bridge 集成
 - hook ingress 到 session event 的转换
-- session store 状态更新与 pending action 行为
+- session store 状态更新与 pending action 行为（含同 session 多 `actionId` 与按 id 路由的 `responseTarget`）
 - renderer 中会话行的基础渲染
+- Playwright E2E：`npm run test:e2e`（含真实 `cursor-hook.sh` 阻塞链路与双 pending 逆序应答）
 
 ## 路线图
 
 下一阶段优先项：
 
-- 把 `action_response` 正式回写给外部工具
 - 接入更丰富的 activity 流
 - 扩展更多 IDE / terminal adapter
 - 增强窗口跳转与聚焦能力

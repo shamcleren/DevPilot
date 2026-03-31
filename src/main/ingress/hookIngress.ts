@@ -2,8 +2,8 @@ import { normalizeCodeBuddyEvent } from "../../adapters/codebuddy/normalizeCodeB
 import { normalizeCursorEvent } from "../../adapters/cursor/normalizeCursorEvent";
 import { isStatusChangeUpstreamEvent } from "../../adapters/shared/eventEnvelope";
 import type { SessionEvent } from "../session/sessionStore";
-import type { PendingAction } from "../session/sessionTypes";
-import { isPendingAction, isSessionStatus } from "../session/sessionTypes";
+import type { PendingAction, ResponseTarget } from "../session/sessionTypes";
+import { isPendingAction, isResponseTarget, isSessionStatus } from "../session/sessionTypes";
 
 /**
  * Cursor/CodeBuddy 等非规范信封路径：仅当根上存在 `pendingAction` 键时才解释该字段。
@@ -19,6 +19,18 @@ function pendingActionFromRawPayload(
   const raw = o.pendingAction;
   if (raw === null) return null;
   return isPendingAction(raw) ? raw : null;
+}
+
+/**
+ * 非规范信封路径：仅当根上存在 `responseTarget` 键时才解释该字段。
+ * 非法形状忽略为 undefined，不丢弃整条事件。
+ */
+function responseTargetFromRawPayload(
+  o: Record<string, unknown>,
+): ResponseTarget | undefined {
+  if (!("responseTarget" in o)) return undefined;
+  const raw = o.responseTarget;
+  return isResponseTarget(raw) ? raw : undefined;
 }
 
 /**
@@ -59,6 +71,13 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     pendingPart = pendingActionFromRawPayload(o);
   }
 
+  let responseTargetPart: ResponseTarget | undefined;
+  if (isStatusChangeUpstreamEvent(parsed)) {
+    responseTargetPart = normalized.responseTarget;
+  } else {
+    responseTargetPart = responseTargetFromRawPayload(o);
+  }
+
   return {
     type: normalized.type,
     sessionId: normalized.sessionId,
@@ -67,5 +86,6 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     task: normalized.task,
     timestamp: normalized.timestamp,
     ...(pendingPart !== undefined ? { pendingAction: pendingPart } : {}),
-  };
+    ...(responseTargetPart !== undefined ? { responseTarget: responseTargetPart } : {}),
+  } as SessionEvent;
 }

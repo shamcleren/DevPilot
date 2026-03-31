@@ -37,7 +37,7 @@ describe("createSessionStore", () => {
     expect(store.getSessions()).toHaveLength(0);
   });
 
-  it("stores pendingAction from status_change envelope", () => {
+  it("stores pendingAction from status_change envelope as pendingActions", () => {
     const store = createSessionStore();
     const pendingAction = {
       id: "a1",
@@ -56,11 +56,205 @@ describe("createSessionStore", () => {
 
     expect(store.getSessions()[0]).toMatchObject({
       id: "s1",
-      pendingAction,
+      pendingActions: [pendingAction],
+    });
+    expect(store.getSessions()[0]).not.toHaveProperty("responseTarget");
+  });
+
+  it("accumulates two different actionIds on the same session in pendingActions", () => {
+    const store = createSessionStore();
+    const a1 = {
+      id: "a1",
+      type: "approval" as const,
+      title: "First",
+      options: ["OK"],
+    };
+    const a2 = {
+      id: "a2",
+      type: "single_choice" as const,
+      title: "Second",
+      options: ["X", "Y"],
+    };
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: a1,
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: a2,
+    });
+    const rec = store.getSessions()[0];
+    expect(rec.pendingActions).toHaveLength(2);
+    expect(rec.pendingActions).toEqual(expect.arrayContaining([a1, a2]));
+  });
+
+  it("keeps pendingActions unchanged when a later event omits pendingAction", () => {
+    const store = createSessionStore();
+    const a1 = {
+      id: "a1",
+      type: "approval" as const,
+      title: "First",
+      options: ["OK"],
+    };
+    const a2 = {
+      id: "a2",
+      type: "single_choice" as const,
+      title: "Second",
+      options: ["X"],
+    };
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: a1,
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: a2,
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "running",
+      task: "still going",
+      timestamp: 3,
+    });
+    const rec = store.getSessions()[0];
+    expect(rec.status).toBe("running");
+    expect(rec.task).toBe("still going");
+    expect(rec.updatedAt).toBe(3);
+    expect(rec.pendingActions).toHaveLength(2);
+    expect(rec.pendingActions).toEqual(expect.arrayContaining([a1, a2]));
+  });
+
+  it("upserts same actionId and replaces action fields; retains responseTarget when follow-up omits it", () => {
+    const store = createSessionStore();
+    const t1 = { mode: "socket" as const, socketPath: "/a.sock" };
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: { id: "x", type: "approval", title: "Old", options: ["OK"] },
+      responseTarget: t1,
+    });
+    const updated = {
+      id: "x",
+      type: "approval" as const,
+      title: "NewTitle",
+      options: ["OK", "Cancel"],
+    };
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: updated,
+    });
+    expect(store.getSessions()[0].pendingActions).toEqual([updated]);
+    expect(store.preparePendingActionResponse("s1", "x", "OK")).toMatchObject({
+      responseTarget: t1,
     });
   });
 
-  it("clears pendingAction when envelope sends null", () => {
+  it("upserts same actionId and overwrites responseTarget when follow-up includes responseTarget", () => {
+    const store = createSessionStore();
+    const t1 = { mode: "socket" as const, socketPath: "/old.sock" };
+    const t2 = { mode: "socket" as const, socketPath: "/new.sock" };
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: { id: "x", type: "approval", title: "T", options: ["OK"] },
+      responseTarget: t1,
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: { id: "x", type: "approval", title: "T", options: ["OK"] },
+      responseTarget: t2,
+    });
+    expect(store.preparePendingActionResponse("s1", "x", "OK")).toMatchObject({
+      responseTarget: t2,
+    });
+  });
+
+  it("preparePendingActionResponse returns line and responseTarget for matching action", () => {
+    const store = createSessionStore();
+    const target = { mode: "socket" as const, socketPath: "/tmp/x.sock", timeoutMs: 500 };
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "act-x",
+        type: "approval",
+        title: "T",
+        options: ["OK"],
+      },
+      responseTarget: target,
+    });
+    const prep = store.preparePendingActionResponse("s1", "act-x", "OK");
+    expect(prep).toEqual({
+      line: JSON.stringify({
+        type: "action_response",
+        sessionId: "s1",
+        actionId: "act-x",
+        response: { kind: "option", value: "OK" },
+      }),
+      responseTarget: target,
+    });
+    expect(store.getSessions()[0].pendingActions).toHaveLength(1);
+  });
+
+  it("completePendingActionResponse removes only the given actionId", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "keep-me",
+        type: "approval",
+        title: "K",
+        options: ["OK"],
+      },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 2,
+      pendingAction: {
+        id: "remove-me",
+        type: "approval",
+        title: "R",
+        options: ["OK"],
+      },
+    });
+    store.completePendingActionResponse("s1", "remove-me");
+    const rec = store.getSessions()[0];
+    expect(rec.pendingActions).toEqual([
+      expect.objectContaining({ id: "keep-me" }),
+    ]);
+  });
+
+  it("clears all pending when envelope sends pendingAction null", () => {
     const store = createSessionStore();
     store.applyEvent({
       sessionId: "s1",
@@ -77,11 +271,23 @@ describe("createSessionStore", () => {
     store.applyEvent({
       sessionId: "s1",
       tool: "cursor",
-      status: "running",
+      status: "waiting",
       timestamp: 2,
+      pendingAction: {
+        id: "a2",
+        type: "approval",
+        title: "T2",
+        options: ["OK"],
+      },
+    });
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "running",
+      timestamp: 3,
       pendingAction: null,
     });
-    expect(store.getSessions()[0].pendingAction).toBeUndefined();
+    expect(store.getSessions()[0].pendingActions).toBeUndefined();
   });
 
   it("respondToPendingAction clears pending and returns action_response JSON", () => {
@@ -108,7 +314,7 @@ describe("createSessionStore", () => {
         response: { kind: "option", value: "A" },
       }),
     );
-    expect(store.getSessions()[0].pendingAction).toBeUndefined();
+    expect(store.getSessions()[0].pendingActions).toBeUndefined();
   });
 
   it("clears stale pending when raw hook sends invalid pendingAction (hookIngress + store)", () => {
@@ -136,7 +342,7 @@ describe("createSessionStore", () => {
     expect(ev?.pendingAction).toBeNull();
     expect(ev).not.toBeNull();
     store.applyEvent(ev!);
-    expect(store.getSessions()[0].pendingAction).toBeUndefined();
+    expect(store.getSessions()[0].pendingActions).toBeUndefined();
     expect(store.getSessions()[0].status).toBe("running");
   });
 

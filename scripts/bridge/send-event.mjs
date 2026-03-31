@@ -39,18 +39,18 @@ function sendLine(client, body) {
   });
 }
 
-async function main() {
-  let body = process.argv[2];
-  if (body === undefined || body === "" || body === "-") {
-    body = await readStdin();
-  }
-  if (!body) {
-    console.error("send-event: missing payload (argv or stdin)");
-    process.exit(1);
+/**
+ * 将一行 JSON 文本经当前 IPC（unix socket 或 TCP）发往 DevPilot。
+ * @param {string} body 原始负载（会 trim）
+ * @param {NodeJS.ProcessEnv} [env] 默认 `process.env`
+ */
+export async function sendEventLine(body, env = process.env) {
+  const trimmed = String(body).trim();
+  if (!trimmed) {
+    throw new Error("sendEventLine: empty body");
   }
 
-  const trimmed = body.trim();
-  const socketPath = process.env.DEVPILOT_SOCKET_PATH;
+  const socketPath = env.DEVPILOT_SOCKET_PATH;
 
   await new Promise((resolve, reject) => {
     const onConnect = () => {
@@ -61,14 +61,32 @@ async function main() {
       ? net.createConnection(socketPath, onConnect)
       : net.createConnection(
           {
-            host: process.env.DEVPILOT_IPC_HOST ?? "127.0.0.1",
-            port: Number(process.env.DEVPILOT_IPC_PORT ?? "17371"),
+            host: env.DEVPILOT_IPC_HOST ?? "127.0.0.1",
+            port: Number(env.DEVPILOT_IPC_PORT ?? "17371"),
           },
           onConnect,
         );
 
     client.once("error", reject);
   });
+}
+
+async function main() {
+  let body = process.argv[2];
+  if (body === undefined || body === "" || body === "-") {
+    body = await readStdin();
+  }
+  if (!body) {
+    console.error("send-event: missing payload (argv or stdin)");
+    process.exit(1);
+  }
+
+  try {
+    await sendEventLine(body, process.env);
+  } catch (err) {
+    console.error("send-event:", err);
+    process.exit(1);
+  }
 }
 
 const thisFile = fileURLToPath(import.meta.url);
