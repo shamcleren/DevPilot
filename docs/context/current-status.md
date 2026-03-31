@@ -24,7 +24,7 @@
 ### Current Adapters
 
 - Cursor normalizer
-- CodeBuddy normalizer
+- CodeBuddy normalizer with fixture-driven CLI / hook calibration for explicit status fields plus documented hook events (`SessionStart`, `Notification`, `UserPromptSubmit`, `PreToolUse`, `SessionEnd`)
 - PyCharm is expected to integrate through CodeBuddy plugin payloads rather than a separate adapter
 
 ### Pending Action Loop
@@ -80,12 +80,12 @@ npm run build
 
 ## Known Gaps
 
-- CodeBuddy real-world payload shapes still need live calibration
+- PyCharm / CodeBuddy plugin-specific payloads are still outside the calibrated mainline; this round only stabilizes CodeBuddy CLI / hook payloads
 - Activity flow in the UI is still shallow compared with the full design intent
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
 ## Recommended Next Steps
 
 1. Add richer activity events into session state and renderer
-2. Verify real Cursor / CodeBuddy / PyCharm integration payloads
+2. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix
 3. Add issue tracking / project board after GitHub project scopes are granted

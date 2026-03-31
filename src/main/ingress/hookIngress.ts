@@ -10,6 +10,22 @@ import {
   isSessionStatus,
 } from "../session/sessionTypes";
 
+const CODEBUDDY_HOOK_EVENT_NAMES = new Set([
+  "AgentSessionUpdate",
+  "PreToolUse",
+  "PostToolUse",
+  "Notification",
+  "UserPromptSubmit",
+  "Stop",
+  "SubagentStop",
+  "PreCompact",
+  "SessionStart",
+  "SessionEnd",
+  "WorktreeCreate",
+  "WorktreeRemove",
+  "unstable_Checkpoint",
+]);
+
 /**
  * Cursor/CodeBuddy 等非规范信封路径：仅当根上存在 `pendingAction` 键时才解释该字段。
  * - 缺键：不碰 session 里已有 pending（返回 undefined，事件不携带 pendingAction）。
@@ -51,6 +67,14 @@ function pendingClosedFromRawPayload(
   return isPendingClosed(raw) ? raw : undefined;
 }
 
+function isCodeBuddyRawPayload(o: Record<string, unknown>): boolean {
+  if (o.source === "codebuddy" || o.tool === "codebuddy") return true;
+  return (
+    typeof o.hook_event_name === "string" &&
+    CODEBUDDY_HOOK_EVENT_NAMES.has(o.hook_event_name)
+  );
+}
+
 /**
  * 将 hook / bridge 发来的一行 JSON 转为可写入 sessionStore 的事件。
  */
@@ -69,12 +93,7 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     normalized = parsed;
   } else if (o.hook_event_name === "StatusChange") {
     normalized = normalizeCursorEvent(o);
-  } else if (
-    o.source === "codebuddy" ||
-    o.tool === "codebuddy" ||
-    (typeof o.hook_event_name === "string" &&
-      /codebuddy/i.test(o.hook_event_name))
-  ) {
+  } else if (isCodeBuddyRawPayload(o)) {
     normalized = normalizeCodeBuddyEvent(o);
   }
 

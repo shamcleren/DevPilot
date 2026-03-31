@@ -13,12 +13,13 @@ DevPilot 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目
 - 支持 `approval` / `single_choice` / `multi_choice` 的项目内闭环
 - 通过 `scripts/bridge/run-blocking-hook.mjs` 与 `scripts/hooks/*` 将 `action_response` 按 `actionId` 回写到各 hook 进程挂起的 collector socket（同一 `sessionId` 下可多笔 pending 并存、互不串线）
 - **Pending 生命周期（Phase 1，有界清理）**：对同一 `actionId` 的重复 `action_response` 在首次成功写回后即被拒绝（first-win），避免重复写回；收到明确的按 action 关闭信号时，面板会移除对应 pending 卡片；若长期收不到关闭信号，pending 会在超时后从可操作 UI 中过期淡出。这是有界的陈旧 pending 清理，**不承诺**跨 IDE / hook 表面的完美一致状态。
+- **CodeBuddy CLI / hook payload 校准（Phase 1）**：显式支持 `status/state/agent_status`、`task/current_task/message/prompt/tool_name/reason/source`、`timestamp/ts` 这些主字段，并对 `SessionStart`、`Notification`、`UserPromptSubmit`、`PreToolUse`、`SessionEnd` 等官方 hook 事件做受限状态映射；hook wrapper 会稳定注入 `tool=codebuddy`，同时保留官方 `source` 原义（例如 `startup`）。
 
 ## 当前边界
 
 - 还没有实现自由文本输入
 - 还没有覆盖精确 terminal pane 跳转、深度窗口控制
-- CodeBuddy 的真实 Hook 字段仍需要联调校准
+- PyCharm / CodeBuddy 插件专属 payload 仍未校准；当前承诺只覆盖 CodeBuddy CLI / hook 主链路
 
 ## 技术栈
 
@@ -109,6 +110,7 @@ npm run build
 当前测试主要覆盖：
 
 - Cursor / CodeBuddy normalizer
+- CodeBuddy fixture 驱动的 hook wrapper / ingress 校准
 - IPC Hub 行协议与 bridge 集成
 - hook ingress 到 session event 的转换
 - session store 状态更新与 pending action 行为（含同 session 多 `actionId` 与按 id 路由的 `responseTarget`）

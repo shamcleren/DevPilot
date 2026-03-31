@@ -9,11 +9,13 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-# 注入 source，便于 Hub 侧路由到 CodeBuddy normalizer（stdin 可已含同名字段）
+# 注入稳定的 CodeBuddy 路由标识；若官方 payload 已带 source（如 SessionStart=startup），不能覆盖它
 payload="$(
   python3 -c '
 import json, sys
 d = json.load(sys.stdin)
+if "tool" not in d:
+    d["tool"] = "codebuddy"
 if "source" not in d:
     d["source"] = "codebuddy"
 print(json.dumps(d))

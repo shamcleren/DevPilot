@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { CODEBUDDY_FIXTURES } from "../../../tests/fixtures/codebuddy";
 import { lineToSessionEvent } from "./hookIngress";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("lineToSessionEvent", () => {
   it("accepts canonical status_change envelope", () => {
@@ -48,6 +53,79 @@ describe("lineToSessionEvent", () => {
     expect(ev?.sessionId).toBe("b1");
     expect(ev?.tool).toBe("codebuddy");
     expect(ev?.status).toBe("error");
+  });
+
+  it("normalizes official CodeBuddy SessionStart payload even when source is startup", () => {
+    const fixture = CODEBUDDY_FIXTURES.find(
+      (item) => item.id === "hook-session-start-source-startup",
+    );
+    expect(fixture).toBeDefined();
+
+    const ev = lineToSessionEvent(JSON.stringify(fixture!.payload));
+
+    expect(ev).toMatchObject({
+      sessionId: "cb-session-101",
+      tool: "codebuddy",
+      status: "running",
+      task: "startup",
+    });
+  });
+
+  it("normalizes official CodeBuddy Notification payload without source injection", () => {
+    const fixture = CODEBUDDY_FIXTURES.find(
+      (item) => item.id === "hook-notification-permission-prompt",
+    );
+    expect(fixture).toBeDefined();
+
+    const ev = lineToSessionEvent(JSON.stringify(fixture!.payload));
+
+    expect(ev).toMatchObject({
+      sessionId: "cb-session-102",
+      tool: "codebuddy",
+      status: "waiting",
+      task: "CodeBuddy needs your permission to use Bash",
+    });
+  });
+
+  it.each(CODEBUDDY_FIXTURES)(
+    "normalizes CodeBuddy fixture $id through ingress",
+    ({ payload, expectation }) => {
+      if (expectation.timestamp === "now") {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date("2026-03-31T12:00:00.000Z"));
+      }
+
+      const ev = lineToSessionEvent(JSON.stringify(payload));
+
+      expect(ev).toMatchObject({
+        sessionId: expectation.sessionId,
+        tool: "codebuddy",
+        status: expectation.status,
+        ...(expectation.task !== undefined ? { task: expectation.task } : {}),
+        timestamp:
+          expectation.timestamp === "now"
+            ? Date.parse("2026-03-31T12:00:00.000Z")
+            : expectation.timestamp,
+      });
+    },
+  );
+
+  it("normalizes AgentSessionUpdate without relying on source/tool injection", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        hook_event_name: "AgentSessionUpdate",
+        session_id: "cb-agent-update",
+        state: "running",
+        current_task: "sync diagnostics",
+      }),
+    );
+
+    expect(ev).toMatchObject({
+      sessionId: "cb-agent-update",
+      tool: "codebuddy",
+      status: "running",
+      task: "sync diagnostics",
+    });
   });
 
   it("returns null for invalid status string", () => {
