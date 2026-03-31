@@ -10,6 +10,12 @@ What is still missing is the external write-back leg. The current hook wrapper s
 
 This design closes that gap without introducing `text_input` or a larger callback/session orchestration layer.
 
+Current product expectation for this iteration:
+
+- DevPilot remains an additive capability and must not become a prerequisite for the native agent path.
+- The current hook/socket model may still produce `stale pending` UI if the native agent consumes a request and DevPilot does not receive an explicit close signal.
+- The first fix is to add pending lifecycle cleanup semantics on top of the existing model, not to switch protocols.
+
 ## Goals
 
 - Finish the Phase 1 external `action_response` write-back loop.
@@ -19,6 +25,7 @@ This design closes that gap without introducing `text_input` or a larger callbac
 - Support `approval`, `single_choice`, and `multi_choice`.
 - Support concurrent waiting and reply routing across multiple agents as long as they are represented by distinct pending requests.
 - Support multiple concurrent pending requests under the same `sessionId`.
+- Minimize misleading `stale pending` UI by adding timeout, close broadcast, and duplicate-response protections.
 
 ## Non-Goals
 
@@ -26,6 +33,7 @@ This design closes that gap without introducing `text_input` or a larger callbac
 - Reworking the renderer pending action UX.
 - Introducing a main-process callback registry or token-based rendezvous system.
 - Solving reconnect, retry queueing, or offline delivery.
+- Replacing the current hook/socket transport with ACP or another protocol as the first remedy for stale pending.
 
 ## Recommended Approach
 
@@ -47,6 +55,40 @@ When DevPilot receives a user selection, the main process should:
 4. Clear the pending action from session state after a successful one-shot send.
 
 If no per-request `responseTarget` is present, DevPilot should keep the current transport behavior and use the process-level fallback configured by environment variables. This preserves the current E2E test path and gives us a safe compatibility fallback.
+
+## Pending Lifecycle and Consistency Model
+
+This iteration should not promise strict cross-surface consistency. It should promise bounded inconsistency with explicit cleanup.
+
+Pending request lifecycle:
+
+- `open`
+  - request is visible and actionable in DevPilot
+- `consumed`
+  - one side has already won the request; the pending card must be removed immediately
+- `expired`
+  - no close signal arrived before timeout; the request should no longer look actionable
+
+Consistency rules:
+
+- First successful consumer wins for a given `(sessionId, actionId)`.
+- Any later response for the same `(sessionId, actionId)` must be rejected as a duplicate or ignored as a no-op.
+- DevPilot-originated success must immediately transition that request to `consumed` locally before the next full refresh.
+- Native-agent-originated success should be reflected back through a close signal so DevPilot can transition the matching request to `consumed`.
+- If no close signal ever arrives, timeout must eventually transition the request out of the actionable pending state so the UI does not imply the agent is still blocked forever.
+
+Close signal strategy:
+
+- Minimum compatibility path for this iteration:
+  - reuse existing upstream semantics where possible, including `pendingAction: null` as a coarse session-level clear
+- Recommended addition for correctness:
+  - add a per-action consumed/closed event so DevPilot can remove only the matching `actionId`
+
+This means the short-term product promise becomes:
+
+- the current version may briefly show stale pending
+- the system should aggressively shrink that stale window
+- the stale window should not remain unbounded
 
 ## Data Model
 
@@ -80,6 +122,7 @@ type PendingActionRuntimeState = {
   action: PendingAction;
   responseTarget?: ResponseTarget;
   updatedAt: number;
+  expiresAt?: number;
 };
 ```
 
@@ -88,6 +131,7 @@ Renderer-facing rule:
 - The renderer receives only `pendingActions`.
 - The renderer does not receive `responseTarget`.
 - The renderer renders all active pending requests for the session.
+- The renderer should remove a pending request immediately once it becomes `consumed` or `expired`.
 
 ## Concurrency Model
 
@@ -130,6 +174,20 @@ Because the current upstream event shape carries only one `pendingAction` field 
 
 This keeps the upstream protocol compatible while allowing the session to accumulate multiple active pending requests over time.
 
+Recommended close semantics to reduce stale pending:
+
+- `pendingClosed: { actionId, reason }`
+  - clear only the matching action by `actionId`
+- `pendingAction: null`
+  - retain the current coarse "clear all pending requests for the session" behavior as a fallback
+
+Recommended close reasons:
+
+- `consumed_local`
+- `consumed_remote`
+- `expired`
+- `cancelled`
+
 ## End-to-End Flow
 
 ### Upstream Hook Path
@@ -158,8 +216,16 @@ This keeps the upstream protocol compatible while allowing the session to accumu
 2. `dispatchActionResponse()` asks the store to resolve the pending request by `(sessionId, actionId)` and the matching response destination.
 3. The main process serializes the existing `action_response` payload.
 4. The transport sends the line to the pending action's `responseTarget`.
-5. After a successful send, the store removes only that pending request and its associated response target.
+5. After a successful send, the store marks only that pending request as `consumed`, rejects later duplicates for the same key, and removes it from the renderer-facing state immediately.
 6. The hook collector receives the line, writes it to stdout, and exits.
+
+### Native-Agent Close Path
+
+1. The native agent path consumes the blocked request outside DevPilot.
+2. The integration should emit a consumed/closed signal back into DevPilot.
+3. `hookIngress` converts that close signal into a per-action close operation when available, or falls back to the current session-level clear semantics.
+4. The store marks the matching request as closed and the renderer removes it immediately.
+5. If no signal is emitted, timeout eventually expires the request so it no longer appears actionable forever.
 
 ## Main-Process Changes
 
@@ -170,6 +236,8 @@ This keeps the upstream protocol compatible while allowing the session to accumu
 - Parse an optional `responseTarget` field from raw hook payloads.
 - Only accept well-formed socket targets.
 - Ignore malformed `responseTarget` values rather than failing the whole event.
+- Parse an optional pending-close signal when present.
+- Preserve compatibility with payloads that do not yet emit explicit close signals.
 
 ### Session Store
 
@@ -180,6 +248,8 @@ This keeps the upstream protocol compatible while allowing the session to accumu
 - When a new pending action arrives with an existing `actionId`, replace that action's runtime state.
 - When `pendingAction` becomes `null`, clear all pending requests and their response targets for that session.
 - Resolve responses against both `sessionId` and `actionId` so concurrent multi-agent waits do not cross-deliver.
+- Track timeout metadata for each pending request so old requests can expire out of the actionable UI.
+- Keep a short-lived consumed/closed ledger keyed by `(sessionId, actionId)` so late duplicate responses are rejected deterministically.
 - When a response is submitted, return both:
   - the serialized `action_response` line
   - the effective transport target for this action, if present
@@ -193,6 +263,8 @@ This keeps the upstream protocol compatible while allowing the session to accumu
 - Render multiple pending action cards for the same session row.
 - Each card responds independently using its own `actionId`.
 - Existing single-pending UI behavior becomes the one-item case of the list rendering.
+- When a consumed/closed signal arrives, remove the matching card immediately rather than waiting for a later status refresh.
+- When a request expires, stop presenting it as actionable and remove it from the default waiting UI.
 
 ### Action Response Dispatch
 
@@ -201,6 +273,7 @@ This keeps the upstream protocol compatible while allowing the session to accumu
 - Use the per-session response target when available.
 - Fall back to the process-level default transport when unavailable.
 - Clear pending state only after a successful send.
+- Treat a second response for an already consumed or expired request as a duplicate reject/no-op and surface that outcome in logs.
 
 ### Transport
 
@@ -240,6 +313,7 @@ To keep shell logic small and testable, the response collector can be implemente
 - If no response arrives before timeout, exit non-zero and log a clear stderr message.
 - If the payload has no `pendingAction`, do not block.
 - If multiple pending hook invocations share the same `sessionId`, each invocation still waits on its own collector and must only complete on its own matching response.
+- If the native side already consumed the request and a duplicate response arrives from DevPilot, the hook/integration should reject or ignore it rather than re-consuming the same request.
 
 ### DevPilot Side
 
@@ -247,6 +321,9 @@ To keep shell logic small and testable, the response collector can be implemente
 - If the dynamic socket send fails, log the error and keep the pending action visible so the failure is observable and retriable after a fresh event.
 - Ignore malformed `responseTarget` values in ingress.
 - If one response succeeds for a session with multiple pending requests, remove only that action and keep the rest visible and routable.
+- If DevPilot does not receive a close signal from the native path, timeout the request so it does not remain indefinitely actionable.
+- If a close signal arrives for a request that is already closed, treat it as idempotent and ignore it.
+- If a duplicate response is attempted after a request is already closed, reject it as a no-op and log enough context to debug race conditions.
 
 ## Testing Plan
 
@@ -257,6 +334,10 @@ To keep shell logic small and testable, the response collector can be implemente
 - `dispatchActionResponse` prefers the session-level target and only clears pending state after a successful send.
 - transport factory can build a one-off socket sender from `ResponseTarget`.
 - renderer session mapping renders multiple pending actions for one session.
+- `sessionStore` expires old pending requests based on timeout metadata.
+- `sessionStore` rejects duplicate responses after a request is already consumed or expired.
+- ingress/store can process a consumed/closed signal and remove only the matching `actionId`.
+- renderer removes a pending card immediately when it receives a consumed/closed update.
 
 ### Integration / E2E
 
@@ -276,6 +357,9 @@ To keep shell logic small and testable, the response collector can be implemente
   - verifies both pending cards render under one session
   - replies in either order
   - asserts each waiting hook process receives only its own response
+- Add an E2E where the native path consumes a request first and DevPilot receives a consumed/closed signal, then assert the pending card disappears without waiting for another unrelated refresh.
+- Add an E2E where no close signal arrives and the pending request expires out of the actionable UI after timeout.
+- Add an E2E where a duplicate second response is attempted after first-win and assert it is rejected/no-op.
 
 ## Trade-Offs
 
@@ -285,6 +369,7 @@ To keep shell logic small and testable, the response collector can be implemente
 - Keeps shared types aligned across `src/shared/`, `src/main/`, and hook/bridge code.
 - Avoids introducing a heavier registry or callback protocol before we have proven the simpler path.
 - Avoids hidden correctness traps where same-session concurrent waits would otherwise silently overwrite one another.
+- Addresses the highest-risk product confusion first: "the agent already continued but DevPilot still looks blocked".
 
 ### What we are explicitly not solving yet
 
@@ -292,12 +377,15 @@ To keep shell logic small and testable, the response collector can be implemente
 - Recovery after hook process death.
 - Cross-machine or networked response delivery.
 - Richer action payload kinds.
+- Strict protocol-level consistency across all native and DevPilot surfaces without any stale window at all.
 
 ## Implementation Notes
 
 - Prefer an internal session-store record shape that can hold bridge metadata without leaking it into renderer state.
 - Reuse the existing `stringifyActionResponsePayload()` helper so downstream payload format stays stable.
 - Keep the bridge metadata optional and isolated so non-blocking events continue to work unchanged.
+- Prefer per-action close semantics when available, but keep coarse session-level clear as a compatibility fallback.
+- Timeout is a cleanup mechanism, not a correctness proof; explicit consumed/closed signals remain preferable whenever the integration can emit them.
 
 ## Open Questions Resolved For This Iteration
 
@@ -315,3 +403,6 @@ To keep shell logic small and testable, the response collector can be implemente
 
 - Why support multiple pending requests under one `sessionId` at all?
   - Because otherwise a later blocked request from the same session would overwrite an earlier one, creating silent misrouting or lost waits. Even if normal product flows are usually linear, the protocol should remain correct under reentry, retries, duplicate hook delivery, or nested tool-driven prompts.
+
+- Should we switch to ACP first to solve stale pending?
+  - No. The first remedy is to add lifecycle cleanup and close semantics on top of the current hook/socket path. Protocol migration can be evaluated later if broader integration benefits justify it.
