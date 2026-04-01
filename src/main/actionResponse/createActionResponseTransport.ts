@@ -4,12 +4,12 @@ import type { ActionResponseTransport } from "./actionResponseTransport";
 
 const ACTION_RESPONSE_SOCKET_TIMEOUT_MS = 1_000;
 const INVALID_SOCKET_CONFIG_MESSAGE =
-  "[DevPilot] action_response socket transport misconfigured; falling back to log transport";
+  "[CodePal] action_response socket transport misconfigured; falling back to log transport";
 
 function createLogTransport(): ActionResponseTransport {
   return {
     async send(line: string) {
-      console.log("[DevPilot] action_response:", line);
+      console.log("[CodePal] action_response:", line);
     },
   };
 }
@@ -73,7 +73,7 @@ function createSocketTransport(
           socket.destroy();
           finish(
             new Error(
-              `[DevPilot] action_response socket send timed out after ${effectiveTimeoutMs}ms`,
+              `[CodePal] action_response socket send timed out after ${effectiveTimeoutMs}ms`,
             ),
           );
         }, effectiveTimeoutMs);
@@ -102,13 +102,13 @@ export function createActionResponseTransportFromResponseTarget(
 export function createActionResponseTransport(
   env: NodeJS.ProcessEnv,
 ): ActionResponseTransport {
-  if (env.DEVPILOT_ACTION_RESPONSE_MODE === "socket") {
-    const socketPath = env.DEVPILOT_ACTION_RESPONSE_SOCKET_PATH?.trim();
+  if (env.CODEPAL_ACTION_RESPONSE_MODE === "socket") {
+    const socketPath = env.CODEPAL_ACTION_RESPONSE_SOCKET_PATH?.trim();
     if (socketPath) {
       return createUnixSocketTransport(socketPath);
     }
-    const host = env.DEVPILOT_ACTION_RESPONSE_HOST?.trim();
-    const portRaw = env.DEVPILOT_ACTION_RESPONSE_PORT?.trim();
+    const host = env.CODEPAL_ACTION_RESPONSE_HOST?.trim();
+    const portRaw = env.CODEPAL_ACTION_RESPONSE_PORT?.trim();
     if (host && portRaw) {
       const port = Number(portRaw);
       if (Number.isFinite(port) && port > 0) {

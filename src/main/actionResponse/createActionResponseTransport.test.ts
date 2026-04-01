@@ -14,7 +14,7 @@ describe("createActionResponseTransport", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const transport = createActionResponseTransport({});
     await transport.send('{"x":1}');
-    expect(logSpy).toHaveBeenCalledWith("[DevPilot] action_response:", '{"x":1}');
+    expect(logSpy).toHaveBeenCalledWith("[CodePal] action_response:", '{"x":1}');
     logSpy.mockRestore();
   });
 
@@ -47,9 +47,9 @@ describe("createActionResponseTransport", () => {
     });
 
     const transport = createActionResponseTransport({
-      DEVPILOT_ACTION_RESPONSE_MODE: "socket",
-      DEVPILOT_ACTION_RESPONSE_HOST: "127.0.0.1",
-      DEVPILOT_ACTION_RESPONSE_PORT: String(port),
+      CODEPAL_ACTION_RESPONSE_MODE: "socket",
+      CODEPAL_ACTION_RESPONSE_HOST: "127.0.0.1",
+      CODEPAL_ACTION_RESPONSE_PORT: String(port),
     });
     const linePromise = received;
     await transport.send("hello-line");
@@ -61,7 +61,7 @@ describe("createActionResponseTransport", () => {
   });
 
   it("socket mode with unix socket path sends line terminated with newline", async () => {
-    const sockPath = path.join(os.tmpdir(), `devpilot-ar-test-${Date.now()}.sock`);
+    const sockPath = path.join(os.tmpdir(), `codepal-ar-test-${Date.now()}.sock`);
     try {
       fs.unlinkSync(sockPath);
     } catch {
@@ -88,10 +88,10 @@ describe("createActionResponseTransport", () => {
     });
 
     const transport = createActionResponseTransport({
-      DEVPILOT_ACTION_RESPONSE_MODE: "socket",
-      DEVPILOT_ACTION_RESPONSE_SOCKET_PATH: sockPath,
-      DEVPILOT_ACTION_RESPONSE_HOST: "127.0.0.1",
-      DEVPILOT_ACTION_RESPONSE_PORT: "9",
+      CODEPAL_ACTION_RESPONSE_MODE: "socket",
+      CODEPAL_ACTION_RESPONSE_SOCKET_PATH: sockPath,
+      CODEPAL_ACTION_RESPONSE_HOST: "127.0.0.1",
+      CODEPAL_ACTION_RESPONSE_PORT: "9",
     });
     const linePromise = received;
     await transport.send("unix-line");
@@ -112,15 +112,15 @@ describe("createActionResponseTransport", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     const transport = createActionResponseTransport({
-      DEVPILOT_ACTION_RESPONSE_MODE: "socket",
+      CODEPAL_ACTION_RESPONSE_MODE: "socket",
     });
 
     await transport.send("fallback-line");
 
     expect(errorSpy).toHaveBeenCalledWith(
-      "[DevPilot] action_response socket transport misconfigured; falling back to log transport",
+      "[CodePal] action_response socket transport misconfigured; falling back to log transport",
     );
-    expect(logSpy).toHaveBeenCalledWith("[DevPilot] action_response:", "fallback-line");
+    expect(logSpy).toHaveBeenCalledWith("[CodePal] action_response:", "fallback-line");
 
     errorSpy.mockRestore();
     logSpy.mockRestore();
@@ -159,9 +159,9 @@ describe("createActionResponseTransport", () => {
       "./createActionResponseTransport"
     );
     const transport = createTransportWithMockedNet({
-      DEVPILOT_ACTION_RESPONSE_MODE: "socket",
-      DEVPILOT_ACTION_RESPONSE_HOST: "127.0.0.1",
-      DEVPILOT_ACTION_RESPONSE_PORT: "1234",
+      CODEPAL_ACTION_RESPONSE_MODE: "socket",
+      CODEPAL_ACTION_RESPONSE_HOST: "127.0.0.1",
+      CODEPAL_ACTION_RESPONSE_PORT: "1234",
     });
 
     const sendPromise = transport.send("timeout-line");
@@ -183,7 +183,7 @@ describe("createActionResponseTransport", () => {
   });
 
   it("createActionResponseTransportFromResponseTarget sends via unix socket path", async () => {
-    const sockPath = path.join(os.tmpdir(), `devpilot-ar-rt-${Date.now()}.sock`);
+    const sockPath = path.join(os.tmpdir(), `codepal-ar-rt-${Date.now()}.sock`);
     try {
       fs.unlinkSync(sockPath);
     } catch {

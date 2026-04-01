@@ -1,8 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { stringifyActionResponsePayload } from "../../src/shared/actionResponsePayload";
 import { startActionResponseCollector } from "./helpers/actionResponseServer";
-import { launchDevPilot } from "./helpers/launchDevPilot";
-import { startBlockingCursorHook } from "./helpers/runHookProcess";
+import { launchCodePal } from "./helpers/launchCodePal";
+import { startBlockingHookCliProcess } from "./helpers/startHookCliProcess";
 import { sendStatusChange } from "./helpers/sendStatusChange";
 
 const repoRoot = process.cwd();
@@ -15,12 +15,12 @@ const OPTION_APPROVE = "Approve";
 test("round-trips a single_choice pending action", async () => {
   const collector = await startActionResponseCollector();
 
-  const devpilot = await launchDevPilot({
+  const codepal = await launchCodePal({
     actionResponseSocketPath: collector.socketPath,
   });
 
   try {
-    const page = await devpilot.app.firstWindow();
+    const page = await codepal.app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
 
     await sendStatusChange(
@@ -38,11 +38,11 @@ test("round-trips a single_choice pending action", async () => {
           options: [OPTION_APPROVE, "Reject"],
         },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     await page.waitForLoadState("load");
-    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -61,7 +61,7 @@ test("round-trips a single_choice pending action", async () => {
 
     await expect(pending).toBeHidden();
   } finally {
-    await devpilot.close().catch(() => undefined);
+    await codepal.close().catch(() => undefined);
     await collector.close().catch(() => undefined);
   }
 });
@@ -74,7 +74,7 @@ const TITLE_B = "E2E concurrent card B";
 
 test("same session: two blocking hooks with different actionIds route action_response correctly", async () => {
   const collector = await startActionResponseCollector();
-  const devpilot = await launchDevPilot({
+  const codepal = await launchCodePal({
     actionResponseSocketPath: collector.socketPath,
   });
 
@@ -87,9 +87,9 @@ test("same session: two blocking hooks with different actionIds route action_res
     timestamp: Date.now(),
   };
 
-  const hookA = startBlockingCursorHook({
+  const hookA = startBlockingHookCliProcess({
     repoRoot,
-    ipcSocketPath: devpilot.ipcSocketPath,
+    ipcSocketPath: codepal.ipcSocketPath,
     payload: {
       ...basePayload,
       pendingAction: {
@@ -101,9 +101,9 @@ test("same session: two blocking hooks with different actionIds route action_res
     },
   });
 
-  const hookB = startBlockingCursorHook({
+  const hookB = startBlockingHookCliProcess({
     repoRoot,
-    ipcSocketPath: devpilot.ipcSocketPath,
+    ipcSocketPath: codepal.ipcSocketPath,
     payload: {
       ...basePayload,
       pendingAction: {
@@ -116,10 +116,10 @@ test("same session: two blocking hooks with different actionIds route action_res
   });
 
   try {
-    const page = await devpilot.app.firstWindow();
+    const page = await codepal.app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForLoadState("load");
-    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -148,7 +148,7 @@ test("same session: two blocking hooks with different actionIds route action_res
   } finally {
     hookA.kill();
     hookB.kill();
-    await devpilot.close().catch(() => undefined);
+    await codepal.close().catch(() => undefined);
     await collector.close().catch(() => undefined);
   }
 });
@@ -161,7 +161,7 @@ const TITLE_REMOTE_Y = "E2E remote close card Y";
 
 test("same session: pendingClosed removes only the matching pending card", async () => {
   const collector = await startActionResponseCollector();
-  const devpilot = await launchDevPilot({
+  const codepal = await launchCodePal({
     actionResponseSocketPath: collector.socketPath,
   });
 
@@ -175,10 +175,10 @@ test("same session: pendingClosed removes only the matching pending card", async
   };
 
   try {
-    const page = await devpilot.app.firstWindow();
+    const page = await codepal.app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForLoadState("load");
-    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -193,7 +193,7 @@ test("same session: pendingClosed removes only the matching pending card", async
           options: ["X1", "Reject"],
         },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     await sendStatusChange(
@@ -207,7 +207,7 @@ test("same session: pendingClosed removes only the matching pending card", async
           options: ["Y1", "Reject"],
         },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     const cardX = page.getByLabel(TITLE_REMOTE_X);
@@ -221,7 +221,7 @@ test("same session: pendingClosed removes only the matching pending card", async
         timestamp: Date.now(),
         pendingClosed: { actionId: REMOTE_ACTION_X, reason: "consumed_remote" },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     await expect(cardX).toBeHidden();
@@ -233,12 +233,12 @@ test("same session: pendingClosed removes only the matching pending card", async
         timestamp: Date.now(),
         pendingClosed: { actionId: REMOTE_ACTION_Y, reason: "consumed_remote" },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     await expect(cardY).toBeHidden();
   } finally {
-    await devpilot.close().catch(() => undefined);
+    await codepal.close().catch(() => undefined);
     await collector.close().catch(() => undefined);
   }
 });
@@ -249,15 +249,15 @@ const EXPIRY_TITLE = "E2E short timeout pending";
 
 test("pending card disappears when lifecycle expires without pendingClosed", async () => {
   const collector = await startActionResponseCollector();
-  const devpilot = await launchDevPilot({
+  const codepal = await launchCodePal({
     actionResponseSocketPath: collector.socketPath,
   });
 
   try {
-    const page = await devpilot.app.firstWindow();
+    const page = await codepal.app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForLoadState("load");
-    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -281,7 +281,7 @@ test("pending card disappears when lifecycle expires without pendingClosed", asy
           timeoutMs: 750,
         },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     const pending = page.getByLabel(EXPIRY_TITLE);
@@ -291,7 +291,7 @@ test("pending card disappears when lifecycle expires without pendingClosed", asy
       collector.expectNoFurtherConnections(12_000),
     ]);
   } finally {
-    await devpilot.close().catch(() => undefined);
+    await codepal.close().catch(() => undefined);
     await collector.close().catch(() => undefined);
   }
 });
@@ -302,15 +302,15 @@ const FIRST_WIN_TITLE = "E2E first-win prompt";
 
 test("after a successful response the card hides and a second action_response is a no-op", async () => {
   const collector = await startActionResponseCollector();
-  const devpilot = await launchDevPilot({
+  const codepal = await launchCodePal({
     actionResponseSocketPath: collector.socketPath,
   });
 
   try {
-    const page = await devpilot.app.firstWindow();
+    const page = await codepal.app.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     await page.waitForLoadState("load");
-    await expect(page.getByRole("heading", { name: "DevPilot" })).toBeVisible({
+    await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
 
@@ -329,7 +329,7 @@ test("after a successful response the card hides and a second action_response is
           options: ["Once", "Twice"],
         },
       },
-      devpilot.ipcSocketPath,
+      codepal.ipcSocketPath,
     );
 
     const pending = page.getByLabel(FIRST_WIN_TITLE);
@@ -348,14 +348,14 @@ test("after a successful response the card hides and a second action_response is
 
     await page.evaluate(
       ([sessionId, actionId]) => {
-        window.devpilot.respondToPendingAction(sessionId, actionId, "Once");
+        window.codepal.respondToPendingAction(sessionId, actionId, "Once");
       },
       [FIRST_WIN_SESSION, FIRST_WIN_ACTION] as const,
     );
 
     await collector.expectNoFurtherConnections(3_000);
   } finally {
-    await devpilot.close().catch(() => undefined);
+    await codepal.close().catch(() => undefined);
     await collector.close().catch(() => undefined);
   }
 });

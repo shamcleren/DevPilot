@@ -40,7 +40,7 @@ function sendLine(client, body) {
 }
 
 /**
- * 将一行 JSON 文本经当前 IPC（unix socket 或 TCP）发往 DevPilot。
+ * 将一行 JSON 文本经当前 IPC（unix socket 或 TCP）发往 CodePal。
  * @param {string} body 原始负载（会 trim）
  * @param {NodeJS.ProcessEnv} [env] 默认 `process.env`
  */
@@ -50,7 +50,7 @@ export async function sendEventLine(body, env = process.env) {
     throw new Error("sendEventLine: empty body");
   }
 
-  const socketPath = env.DEVPILOT_SOCKET_PATH;
+  const socketPath = env.CODEPAL_SOCKET_PATH;
 
   await new Promise((resolve, reject) => {
     const onConnect = () => {
@@ -61,8 +61,8 @@ export async function sendEventLine(body, env = process.env) {
       ? net.createConnection(socketPath, onConnect)
       : net.createConnection(
           {
-            host: env.DEVPILOT_IPC_HOST ?? "127.0.0.1",
-            port: Number(env.DEVPILOT_IPC_PORT ?? "17371"),
+            host: env.CODEPAL_IPC_HOST ?? "127.0.0.1",
+            port: Number(env.CODEPAL_IPC_PORT ?? "17371"),
           },
           onConnect,
         );

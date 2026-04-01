@@ -18,7 +18,7 @@ export type ActionResponseCollector = {
  * newline-terminated line.
  */
 export async function startActionResponseCollector(): Promise<ActionResponseCollector> {
-  const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), "devpilot-action-response-"));
+  const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), "codepal-action-response-"));
   const socketPath = path.join(socketDir, "collector.sock");
   const server = net.createServer();
   let firstLine: string | null = null;

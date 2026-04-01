@@ -1,27 +1,20 @@
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createIpcHub } from "./ipcHub";
-import { buildActionResponseLine } from "../../../scripts/bridge/send-event.mjs";
 import { stringifyActionResponsePayload } from "../../shared/actionResponsePayload";
+import { buildActionResponseLine, sendEventLine } from "../hook/sendEventBridge";
+import { createIpcHub } from "./ipcHub";
 
-const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-
-describe("buildActionResponseLine (send-event.mjs)", () => {
+describe("buildActionResponseLine (sendEventBridge)", () => {
   it("matches main-process stringifyActionResponsePayload", () => {
-    const sessionId = "s1";
-    const actionId = "a1";
-    const option = "OK";
-    expect(buildActionResponseLine(sessionId, actionId, option)).toBe(
-      stringifyActionResponsePayload(sessionId, actionId, option),
+    expect(buildActionResponseLine("s1", "a1", "OK")).toBe(
+      stringifyActionResponsePayload("s1", "a1", "OK"),
     );
   });
 });
 
-describe("send-event.mjs (TCP)", () => {
+describe("sendEventLine (TCP)", () => {
   it("writes one newline-terminated JSON line to the hub", async () => {
     const onMessage = vi.fn();
     const { server } = createIpcHub(onMessage);
@@ -29,8 +22,8 @@ describe("send-event.mjs (TCP)", () => {
       server.listen(0, "127.0.0.1", () => resolve());
       server.once("error", reject);
     });
-    const addr = server.address();
-    if (!addr || typeof addr === "string") {
+    const address = server.address();
+    if (!address || typeof address === "string") {
       throw new Error("expected TCP address");
     }
 
@@ -43,38 +36,33 @@ describe("send-event.mjs (TCP)", () => {
       timestamp: 1,
     });
 
-    const exitCode: number = await new Promise((resolve, reject) => {
-      const child = spawn("node", ["scripts/bridge/send-event.mjs", payload], {
-        cwd: projectRoot,
-        env: { ...process.env, DEVPILOT_IPC_PORT: String(addr.port) },
-      });
-      child.on("error", reject);
-      child.on("close", (code) => resolve(code ?? 1));
+    await sendEventLine(payload, {
+      ...process.env,
+      CODEPAL_IPC_PORT: String(address.port),
+      CODEPAL_SOCKET_PATH: "",
     });
 
-    expect(exitCode).toBe(0);
     expect(onMessage).toHaveBeenCalledTimes(1);
     expect(onMessage).toHaveBeenCalledWith(payload);
-
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 });
 
-describe("send-event.mjs (unix socket)", () => {
+describe("sendEventLine (unix socket)", () => {
   it.skipIf(process.platform === "win32")(
-    "writes one line when DEVPILOT_SOCKET_PATH is set",
+    "writes one line when CODEPAL_SOCKET_PATH is set",
     async () => {
-      const sock = join(os.tmpdir(), `devpilot-bridge-${Date.now()}.sock`);
+      const socketPath = join(os.tmpdir(), `codepal-bridge-${Date.now()}.sock`);
       try {
-        fs.unlinkSync(sock);
+        fs.unlinkSync(socketPath);
       } catch {
-        /* ENOENT */
+        // ENOENT
       }
 
       const onMessage = vi.fn();
       const { server } = createIpcHub(onMessage);
       await new Promise<void>((resolve, reject) => {
-        server.listen(sock, () => resolve());
+        server.listen(socketPath, () => resolve());
         server.once("error", reject);
       });
 
@@ -86,24 +74,16 @@ describe("send-event.mjs (unix socket)", () => {
         timestamp: 2,
       });
 
-      const exitCode: number = await new Promise((resolve, reject) => {
-        const child = spawn("node", ["scripts/bridge/send-event.mjs", payload], {
-          cwd: projectRoot,
-          env: { ...process.env, DEVPILOT_SOCKET_PATH: sock },
-        });
-        child.on("error", reject);
-        child.on("close", (code) => resolve(code ?? 1));
-      });
+      await sendEventLine(payload, { ...process.env, CODEPAL_SOCKET_PATH: socketPath });
 
-      expect(exitCode).toBe(0);
       expect(onMessage).toHaveBeenCalledTimes(1);
       expect(onMessage).toHaveBeenCalledWith(payload);
 
       await new Promise<void>((resolve) => server.close(() => resolve()));
       try {
-        fs.unlinkSync(sock);
+        fs.unlinkSync(socketPath);
       } catch {
-        /* */
+        // ignore
       }
     },
   );

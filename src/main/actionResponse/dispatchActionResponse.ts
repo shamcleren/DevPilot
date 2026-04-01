@@ -35,7 +35,7 @@ export async function dispatchActionResponse(
   const inFlightKey = getPendingActionResponseKey(sessionId, actionId);
   if (inFlightPendingActionResponseKeys.has(inFlightKey)) {
     console.warn(
-      "[DevPilot] action_response ignored (already in flight):",
+      "[CodePal] action_response ignored (already in flight):",
       `sessionId=${sessionId} actionId=${actionId}`,
     );
     return false;
@@ -44,7 +44,7 @@ export async function dispatchActionResponse(
   const prep = sessionStore.preparePendingActionResponse(sessionId, actionId, option);
   if (!prep) {
     if (sessionStore.isPendingActionClosed(sessionId, actionId)) {
-      console.warn("[DevPilot] duplicate action_response ignored:", sessionId, actionId);
+      console.warn("[CodePal] duplicate action_response ignored:", sessionId, actionId);
     }
     return false;
   }

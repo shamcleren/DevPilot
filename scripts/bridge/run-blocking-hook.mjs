@@ -40,14 +40,14 @@ function readStdin() {
 }
 
 function parseWaitMs(env) {
-  const raw = env.DEVPILOT_HOOK_RESPONSE_WAIT_MS;
+  const raw = env.CODEPAL_HOOK_RESPONSE_WAIT_MS;
   if (raw === undefined || raw === "") return 3_600_000;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : 3_600_000;
 }
 
 function parseSocketTimeoutMs(env) {
-  const raw = env.DEVPILOT_ACTION_RESPONSE_SOCKET_TIMEOUT_MS;
+  const raw = env.CODEPAL_ACTION_RESPONSE_SOCKET_TIMEOUT_MS;
   if (raw === undefined || raw === "") return 10_000;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : 10_000;
@@ -58,7 +58,7 @@ function parseSocketTimeoutMs(env) {
  * @returns {Promise<{ socketPath: string, linePromise: Promise<string>, dispose: () => Promise<void> }>}
  */
 async function startCollector(waitMs) {
-  const socketDir = await mkdtemp(path.join(os.tmpdir(), "devpilot-hook-response-"));
+  const socketDir = await mkdtemp(path.join(os.tmpdir(), "codepal-hook-response-"));
   const socketPath = path.join(socketDir, "collector.sock");
   const server = net.createServer();
 

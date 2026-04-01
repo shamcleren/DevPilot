@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DevPilot 项目根（本脚本位于 scripts/hooks/）
+# CodePal 项目根（本脚本位于 scripts/hooks/）
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
