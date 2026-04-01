@@ -1,19 +1,14 @@
-appId: ai.shamcleren.devpilot
-productName: DevPilot
+appId: ai.shamcleren.codepal
+productName: CodePal
 directories:
   output: release
 files:
   - out/**/*
   - package.json
-extraResources:
-  - from: scripts
-    to: scripts
-    filter:
-      - bridge/**/*
-      - hooks/**/*
 asar: true
 npmRebuild: false
 mac:
+  icon: build/icon.icns
   artifactName: ${productName}-${version}-${arch}.${ext}
   category: public.app-category.developer-tools
   target:

@@ -74,7 +74,7 @@
 - Modify: `src/renderer/components/SessionRow.test.tsx`
 - Modify: `src/renderer/sessionBootstrap.test.ts`
 - Create: `tests/e2e/helpers/runHookProcess.ts`
-- Modify: `tests/e2e/devpilot-action-response.e2e.ts`
+- Modify: `tests/e2e/codepal-action-response.e2e.ts`
 
 ### Docs
 
@@ -109,7 +109,7 @@ it("parses responseTarget on canonical status_change", () => {
       },
       responseTarget: {
         mode: "socket",
-        socketPath: "/tmp/devpilot-a1.sock",
+        socketPath: "/tmp/codepal-a1.sock",
         timeoutMs: 25_000,
       },
     }),
@@ -117,7 +117,7 @@ it("parses responseTarget on canonical status_change", () => {
 
   expect(ev?.responseTarget).toEqual({
     mode: "socket",
-    socketPath: "/tmp/devpilot-a1.sock",
+    socketPath: "/tmp/codepal-a1.sock",
     timeoutMs: 25_000,
   });
 });
@@ -718,7 +718,7 @@ async function main() {
     return;
   }
 
-  const socketDir = await mkdtemp(path.join(os.tmpdir(), "devpilot-hook-"));
+  const socketDir = await mkdtemp(path.join(os.tmpdir(), "codepal-hook-"));
   const socketPath = path.join(socketDir, "response.sock");
   const server = net.createServer();
   await new Promise((resolve, reject) => {
@@ -752,7 +752,7 @@ async function main() {
 ```js
 export async function sendEventLine(body, env = process.env) {
   const trimmed = body.trim();
-  const socketPath = env.DEVPILOT_SOCKET_PATH;
+  const socketPath = env.CODEPAL_SOCKET_PATH;
 
   await new Promise((resolve, reject) => {
     const onConnect = () => {
@@ -763,8 +763,8 @@ export async function sendEventLine(body, env = process.env) {
       ? net.createConnection(socketPath, onConnect)
       : net.createConnection(
           {
-            host: env.DEVPILOT_IPC_HOST ?? "127.0.0.1",
-            port: Number(env.DEVPILOT_IPC_PORT ?? "17371"),
+            host: env.CODEPAL_IPC_HOST ?? "127.0.0.1",
+            port: Number(env.CODEPAL_IPC_PORT ?? "17371"),
           },
           onConnect,
         );
@@ -790,7 +790,7 @@ Expected: PASS. The helper itself is validated in E2E in the next task.
 
 **Files:**
 - Create: `tests/e2e/helpers/runHookProcess.ts`
-- Modify: `tests/e2e/devpilot-action-response.e2e.ts`
+- Modify: `tests/e2e/codepal-action-response.e2e.ts`
 - Modify: `README.md`
 - Modify: `AGENTS.md`
 - Modify: `docs/context/current-status.md`
@@ -839,13 +839,13 @@ export async function runHookProcess(
 
 ```ts
 test("routes same-session pending actions to the matching waiting hooks", async () => {
-  const devpilot = await launchDevPilot({
+  const codepal = await launchCodePal({
     actionResponseSocketPath: collector.socketPath,
   });
 
   const env = {
     ...process.env,
-    DEVPILOT_SOCKET_PATH: devpilot.ipcSocketPath,
+    CODEPAL_SOCKET_PATH: codepal.ipcSocketPath,
   };
 
   const hookA = await runHookProcess(cursorHookPath, {
@@ -872,7 +872,7 @@ test("routes same-session pending actions to the matching waiting hooks", async 
     },
   }, env);
 
-  const page = await devpilot.app.firstWindow();
+  const page = await codepal.app.firstWindow();
   await expect(page.getByLabel("Approve A?")).toBeVisible();
   await expect(page.getByLabel("Choose B")).toBeVisible();
 

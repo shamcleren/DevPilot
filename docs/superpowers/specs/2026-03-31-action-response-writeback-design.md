@@ -2,18 +2,18 @@
 
 ## Context
 
-DevPilot Phase 1 already supports the in-app pending action loop:
+CodePal Phase 1 already supports the in-app pending action loop:
 
 `hook / bridge -> IPC hub -> ingress -> session store -> renderer -> preload -> main -> action_response payload`
 
-What is still missing is the external write-back leg. The current hook wrapper scripts only forward upstream events into DevPilot. They do not wait for a user choice and do not return an `action_response` payload back to the blocked external tool hook.
+What is still missing is the external write-back leg. The current hook wrapper scripts only forward upstream events into CodePal. They do not wait for a user choice and do not return an `action_response` payload back to the blocked external tool hook.
 
 This design closes that gap without introducing `text_input` or a larger callback/session orchestration layer.
 
 Current product expectation for this iteration:
 
-- DevPilot remains an additive capability and must not become a prerequisite for the native agent path.
-- The current hook/socket model may still produce `stale pending` UI if the native agent consumes a request and DevPilot does not receive an explicit close signal.
+- CodePal remains an additive capability and must not become a prerequisite for the native agent path.
+- The current hook/socket model may still produce `stale pending` UI if the native agent consumes a request and CodePal does not receive an explicit close signal.
 - The first fix is to add pending lifecycle cleanup semantics on top of the existing model, not to switch protocols.
 
 ## Goals
@@ -42,19 +42,19 @@ Use a minimal per-request response target carried with the incoming hook event.
 When a hook wrapper receives an upstream payload with `pendingAction`, it should:
 
 1. Create a short-lived local response collector.
-2. Attach a `responseTarget` object to the event before forwarding it to DevPilot.
-3. Send the event to DevPilot through the existing bridge.
+2. Attach a `responseTarget` object to the event before forwarding it to CodePal.
+3. Send the event to CodePal through the existing bridge.
 4. Block waiting for a single `action_response`.
 5. Print the response line to stdout and exit.
 
-When DevPilot receives a user selection, the main process should:
+When CodePal receives a user selection, the main process should:
 
 1. Resolve the matching pending action from `sessionStore`.
 2. Prefer the pending action's stored `responseTarget`.
 3. Send the existing JSON `action_response` payload to that target.
 4. Clear the pending action from session state after a successful one-shot send.
 
-If no per-request `responseTarget` is present, DevPilot should keep the current transport behavior and use the process-level fallback configured by environment variables. This preserves the current E2E test path and gives us a safe compatibility fallback.
+If no per-request `responseTarget` is present, CodePal should keep the current transport behavior and use the process-level fallback configured by environment variables. This preserves the current E2E test path and gives us a safe compatibility fallback.
 
 ## Pending Lifecycle and Consistency Model
 
@@ -63,7 +63,7 @@ This iteration should not promise strict cross-surface consistency. It should pr
 Pending request lifecycle:
 
 - `open`
-  - request is visible and actionable in DevPilot
+  - request is visible and actionable in CodePal
 - `consumed`
   - one side has already won the request; the pending card must be removed immediately
 - `expired`
@@ -73,8 +73,8 @@ Consistency rules:
 
 - First successful consumer wins for a given `(sessionId, actionId)`.
 - Any later response for the same `(sessionId, actionId)` must be rejected as a duplicate or ignored as a no-op.
-- DevPilot-originated success must immediately transition that request to `consumed` locally before the next full refresh.
-- Native-agent-originated success should be reflected back through a close signal so DevPilot can transition the matching request to `consumed`.
+- CodePal-originated success must immediately transition that request to `consumed` locally before the next full refresh.
+- Native-agent-originated success should be reflected back through a close signal so CodePal can transition the matching request to `consumed`.
 - If no close signal ever arrives, timeout must eventually transition the request out of the actionable pending state so the UI does not imply the agent is still blocked forever.
 
 Close signal strategy:
@@ -82,7 +82,7 @@ Close signal strategy:
 - Minimum compatibility path for this iteration:
   - reuse existing upstream semantics where possible, including `pendingAction: null` as a coarse session-level clear
 - Recommended addition for correctness:
-  - add a per-action consumed/closed event so DevPilot can remove only the matching `actionId`
+  - add a per-action consumed/closed event so CodePal can remove only the matching `actionId`
 
 This means the short-term product promise becomes:
 
@@ -200,7 +200,7 @@ Recommended close reasons:
 {
   "responseTarget": {
     "mode": "socket",
-    "socketPath": "/tmp/devpilot-response-xxxx.sock",
+    "socketPath": "/tmp/codepal-response-xxxx.sock",
     "timeoutMs": 25000
   }
 }
@@ -221,8 +221,8 @@ Recommended close reasons:
 
 ### Native-Agent Close Path
 
-1. The native agent path consumes the blocked request outside DevPilot.
-2. The integration should emit a consumed/closed signal back into DevPilot.
+1. The native agent path consumes the blocked request outside CodePal.
+2. The integration should emit a consumed/closed signal back into CodePal.
 3. `hookIngress` converts that close signal into a per-action close operation when available, or falls back to the current session-level clear semantics.
 4. The store marks the matching request as closed and the renderer removes it immediately.
 5. If no signal is emitted, timeout eventually expires the request so it no longer appears actionable forever.
@@ -309,19 +309,19 @@ To keep shell logic small and testable, the response collector can be implemente
 ### Hook Side
 
 - If the hook cannot start a collector, exit non-zero.
-- If sending the event to DevPilot fails, exit non-zero.
+- If sending the event to CodePal fails, exit non-zero.
 - If no response arrives before timeout, exit non-zero and log a clear stderr message.
 - If the payload has no `pendingAction`, do not block.
 - If multiple pending hook invocations share the same `sessionId`, each invocation still waits on its own collector and must only complete on its own matching response.
-- If the native side already consumed the request and a duplicate response arrives from DevPilot, the hook/integration should reject or ignore it rather than re-consuming the same request.
+- If the native side already consumed the request and a duplicate response arrives from CodePal, the hook/integration should reject or ignore it rather than re-consuming the same request.
 
-### DevPilot Side
+### CodePal Side
 
 - If a pending action has no `responseTarget`, use the existing fallback transport.
 - If the dynamic socket send fails, log the error and keep the pending action visible so the failure is observable and retriable after a fresh event.
 - Ignore malformed `responseTarget` values in ingress.
 - If one response succeeds for a session with multiple pending requests, remove only that action and keep the rest visible and routable.
-- If DevPilot does not receive a close signal from the native path, timeout the request so it does not remain indefinitely actionable.
+- If CodePal does not receive a close signal from the native path, timeout the request so it does not remain indefinitely actionable.
 - If a close signal arrives for a request that is already closed, treat it as idempotent and ignore it.
 - If a duplicate response is attempted after a request is already closed, reject it as a no-op and log enough context to debug race conditions.
 
@@ -341,9 +341,9 @@ To keep shell logic small and testable, the response collector can be implemente
 
 ### Integration / E2E
 
-- Keep the existing `tests/e2e/devpilot-action-response.e2e.ts`.
+- Keep the existing `tests/e2e/codepal-action-response.e2e.ts`.
 - Add a hook-level E2E that:
-  - launches DevPilot
+  - launches CodePal
   - invokes the real hook script with a pending-action payload
   - clicks an option in the renderer
   - asserts the hook process prints the expected `action_response` JSON to stdout
@@ -357,7 +357,7 @@ To keep shell logic small and testable, the response collector can be implemente
   - verifies both pending cards render under one session
   - replies in either order
   - asserts each waiting hook process receives only its own response
-- Add an E2E where the native path consumes a request first and DevPilot receives a consumed/closed signal, then assert the pending card disappears without waiting for another unrelated refresh.
+- Add an E2E where the native path consumes a request first and CodePal receives a consumed/closed signal, then assert the pending card disappears without waiting for another unrelated refresh.
 - Add an E2E where no close signal arrives and the pending request expires out of the actionable UI after timeout.
 - Add an E2E where a duplicate second response is attempted after first-win and assert it is rejected/no-op.
 
@@ -369,7 +369,7 @@ To keep shell logic small and testable, the response collector can be implemente
 - Keeps shared types aligned across `src/shared/`, `src/main/`, and hook/bridge code.
 - Avoids introducing a heavier registry or callback protocol before we have proven the simpler path.
 - Avoids hidden correctness traps where same-session concurrent waits would otherwise silently overwrite one another.
-- Addresses the highest-risk product confusion first: "the agent already continued but DevPilot still looks blocked".
+- Addresses the highest-risk product confusion first: "the agent already continued but CodePal still looks blocked".
 
 ### What we are explicitly not solving yet
 
@@ -377,7 +377,7 @@ To keep shell logic small and testable, the response collector can be implemente
 - Recovery after hook process death.
 - Cross-machine or networked response delivery.
 - Richer action payload kinds.
-- Strict protocol-level consistency across all native and DevPilot surfaces without any stale window at all.
+- Strict protocol-level consistency across all native and CodePal surfaces without any stale window at all.
 
 ## Implementation Notes
 
@@ -389,7 +389,7 @@ To keep shell logic small and testable, the response collector can be implemente
 
 ## Open Questions Resolved For This Iteration
 
-- Should DevPilot always use a global action response transport?
+- Should CodePal always use a global action response transport?
   - No. Use a per-request target first, then fall back to the existing global transport.
 
 - Should the renderer know about response routing?

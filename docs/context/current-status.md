@@ -2,8 +2,8 @@
 
 ## Repository State
 
-- Repository: `shamcleren/DevPilot`
-- Local path: `personal/shamcleren/private/DevPilot`
+- Repository: `shamcleren/CodePal`
+- Local path: `personal/shamcleren/private/CodePal`
 - Stack: Electron + React + TypeScript + electron-vite + Vitest + Tailwind CSS
 - Bootstrap status: complete
 
@@ -12,14 +12,14 @@
 ### App Shell
 
 - Electron main process, preload bridge, tray, and floating window shell
-- Renderer monitoring panel with status bar, session rows, hover details, and an in-app integration settings panel
+- Renderer monitoring panel with status bar, session rows, hover details, plus a separate settings window for integrations
 - Shared session and payload types in `src/shared/`
 
 ### Monitoring Flow
 
 - Hook / bridge -> IPC Hub -> ingress -> session store -> renderer
 - TCP is supported by default
-- Unix socket path is also supported when `DEVPILOT_SOCKET_PATH` is configured
+- Unix socket path is also supported when `CODEPAL_SOCKET_PATH` is configured
 
 ### Current Adapters
 
@@ -29,7 +29,7 @@
 
 ### Integration Settings
 
-- Main process diagnostics now expose the current DevPilot listener endpoint, runtime dependency status (`node` / `python3`), and per-agent hook install status
+- Main process diagnostics now expose the current CodePal listener endpoint, runtime dependency status (`node` / `python3`), and per-agent integration health (`active` / `repair_needed` / `not_configured`)
 - UI can write or repair user-level hook config for:
   - `Cursor` via `~/.cursor/hooks.json`
   - `CodeBuddy` via `~/.codebuddy/settings.json`
@@ -56,7 +56,7 @@ Same `sessionId` may have multiple pending actions at once; each keeps its own o
 **Pending lifecycle cleanup (Phase 1, bounded):**
 
 - Duplicate `action_response` payloads for the same `actionId` are rejected after the first successful handling (first-win).
-- DevPilot removes pending cards when an explicit per-action close signal arrives from the upstream flow.
+- CodePal removes pending cards when an explicit per-action close signal arrives from the upstream flow.
 - When no close signal arrives, pending cards can expire out of the actionable UI after a timeout.
 - This is intentional **bounded stale-pending cleanup** for the panel; it is **not** a guarantee of perfect cross-surface consistency with every IDE or hook process.
 

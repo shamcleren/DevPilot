@@ -1,9 +1,9 @@
 ---
-description: DevPilot project context and superpowers workflow
+description: CodePal project context and superpowers workflow
 alwaysApply: true
 ---
 
-# DevPilot Project Rule
+# CodePal Project Rule
 
 - Start each session by invoking `superpowers:using-superpowers`.
 - Before substantial work, read `AGENTS.md`, `README.md`, and `docs/context/current-status.md`.

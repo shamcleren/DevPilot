@@ -108,7 +108,7 @@ describe("createIpcHub", () => {
   it.skipIf(process.platform === "win32")(
     "consumes a single line over a unix domain socket",
     async () => {
-      const sock = path.join(os.tmpdir(), `devpilot-ipc-${Date.now()}.sock`);
+      const sock = path.join(os.tmpdir(), `codepal-ipc-${Date.now()}.sock`);
       try {
         fs.unlinkSync(sock);
       } catch {

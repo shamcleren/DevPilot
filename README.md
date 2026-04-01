@@ -1,6 +1,6 @@
-# DevPilot
+# CodePal
 
-DevPilot 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目标是在一个浮动窗口里集中查看任务状态，减少在 Cursor、CodeBuddy、PyCharm 和终端之间反复切换的成本。
+CodePal 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目标是在一个浮动窗口里集中查看任务状态，减少在 Cursor、CodeBuddy、PyCharm 和终端之间反复切换的成本。
 
 当前仓库已经完成第一阶段 bootstrap，可以本地运行、测试和构建。
 
@@ -14,7 +14,7 @@ DevPilot 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目
 - 通过 `scripts/bridge/run-blocking-hook.mjs` 与 `scripts/hooks/*` 将 `action_response` 按 `actionId` 回写到各 hook 进程挂起的 collector socket（同一 `sessionId` 下可多笔 pending 并存、互不串线）
 - **Pending 生命周期（Phase 1，有界清理）**：对同一 `actionId` 的重复 `action_response` 在首次成功写回后即被拒绝（first-win），避免重复写回；收到明确的按 action 关闭信号时，面板会移除对应 pending 卡片；若长期收不到关闭信号，pending 会在超时后从可操作 UI 中过期淡出。这是有界的陈旧 pending 清理，**不承诺**跨 IDE / hook 表面的完美一致状态。
 - **CodeBuddy CLI / hook payload 校准（Phase 1）**：显式支持 `status/state/agent_status`、`task/current_task/message/prompt/tool_name/reason/source`、`timestamp/ts` 这些主字段，并对 `SessionStart`、`Notification`、`UserPromptSubmit`、`PreToolUse`、`SessionEnd` 等官方 hook 事件做受限状态映射；hook wrapper 会稳定注入 `tool=codebuddy`，同时保留官方 `source` 原义（例如 `startup`）。
-- **集成设置面板（测试版）**：主界面内可查看 DevPilot 当前监听端点、`Cursor` / `CodeBuddy` hook 是否已安装、最近是否收到事件，并支持一键写入/修复用户级 hook 配置。
+- **独立设置界面（测试版）**：配置与接入诊断已从主监控界面拆出，可通过主窗口右上角或托盘菜单打开，查看 CodePal 当前监听端点、`Cursor` / `CodeBuddy` 的真实健康状态（`已激活` / `需修复` / `未配置`），并支持一键写入/修复用户级 hook 配置。
 - **macOS 测试版产物（unsigned / ad-hoc）**：可通过 `npm run dist:mac` 生成 `release/` 下的 `.zip` 与 `.dmg` 测试包，便于内部安装试用。
 
 ## 当前边界
@@ -46,7 +46,7 @@ DevPilot 是一个面向多 IDE / 多 AI Agent 场景的统一监控面板，目
 3. `src/adapters/`
    Hook 事件归一化层，目前包含 Cursor 和 CodeBuddy。
 4. `scripts/`
-   Hook 包装脚本与 bridge sender，用于把外部工具事件发送到 DevPilot。
+   Hook 包装脚本与 bridge sender，用于把外部工具事件发送到 CodePal。
 
 ## 目录结构
 
@@ -106,8 +106,8 @@ npm run dist:mac
 
 默认产物会写到 `release/`，当前会生成：
 
-- `DevPilot-<version>-arm64.zip`
-- `DevPilot-<version>-arm64.dmg`
+- `CodePal-<version>-arm64.zip`
+- `CodePal-<version>-arm64.dmg`
 
 说明：
 
@@ -128,11 +128,11 @@ npm run dist:mac
 
 ## 集成设置
 
-当前 UI 内置集成设置面板，支持：
+当前设置界面支持：
 
-- 展示当前 DevPilot listener 是 `TCP` 还是 `Unix socket`
+- 展示当前 CodePal listener 是 `TCP` 还是 `Unix socket`
 - 展示 `node` / `python3` 运行时是否可用
-- 检测 `Cursor` 与 `CodeBuddy` 用户级配置文件是否已包含 DevPilot hook
+- 检测 `Cursor` 与 `CodeBuddy` 用户级配置文件是否已包含 CodePal hook
 - 一键写入或修复对应配置
 - 展示最近一次从对应 agent 收到的事件时间与状态
 
@@ -148,7 +148,7 @@ npm run dist:mac
 
 - Cursor / CodeBuddy normalizer
 - CodeBuddy fixture 驱动的 hook wrapper / ingress 校准
-- 集成设置面板与自动配置服务
+- 独立设置界面与自动配置服务
 - IPC Hub 行协议与 bridge 集成
 - hook ingress 到 session event 的转换
 - session store 状态更新与 pending action 行为（含同 session 多 `actionId` 与按 id 路由的 `responseTarget`）
@@ -165,4 +165,4 @@ npm run dist:mac
 
 ## 仓库状态
 
-这是 `DevPilot` 的独立仓库初始化版本，适合作为后续功能开发的基础分支。
+这是 `CodePal` 的独立仓库初始化版本，适合作为后续功能开发的基础分支。

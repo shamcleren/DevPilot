@@ -71,7 +71,7 @@ describe("dispatchActionResponse", () => {
 
   it("when prepare returns responseTarget: builds transport from target and does not use fallback send", async () => {
     const store = createSessionStore();
-    const sockPath = "/tmp/devpilot-dispatch-target.sock";
+    const sockPath = "/tmp/codepal-dispatch-target.sock";
     const target = { mode: "socket" as const, socketPath: sockPath, timeoutMs: 750 };
 
     store.applyEvent({
@@ -252,7 +252,7 @@ describe("dispatchActionResponse", () => {
     expect(transport.send).not.toHaveBeenCalled();
     expect(broadcastSessions).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(
-      "[DevPilot] duplicate action_response ignored:",
+      "[CodePal] duplicate action_response ignored:",
       "s1",
       "act-1",
     );

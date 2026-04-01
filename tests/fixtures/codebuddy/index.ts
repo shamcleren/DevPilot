@@ -32,7 +32,7 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
   {
     id: "agent-session-update-state-current-task",
     source: "quasi-real",
-    description: "当前 DevPilot 已支持的 CodeBuddy 状态更新形状",
+    description: "当前 CodePal 已支持的 CodeBuddy 状态更新形状",
     sessionIdFields: ["session_id"],
     statusSignals: ["state"],
     taskSignals: ["current_task"],

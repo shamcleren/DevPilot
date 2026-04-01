@@ -5,7 +5,7 @@
 ## 设计原则
 
 - `official-doc`：直接取自 CodeBuddy 官方 hooks / SDK 文档的字段形状。
-- `quasi-real`：来自当前 DevPilot 已接入的 CodeBuddy 状态更新假设，用于保证现有主链路不回退。
+- `quasi-real`：来自当前 CodePal 已接入的 CodeBuddy 状态更新假设，用于保证现有主链路不回退。
 - fixture 只保留校准所需的最小字段，不把超长原始 payload 全量复制进仓库。
 - 兼容矩阵明确区分“首选字段”和“降级字段”，后续 normalizer / ingress 测试都以这里为准。
 

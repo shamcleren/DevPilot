@@ -232,7 +232,7 @@ describe("lineToSessionEvent", () => {
   it("parses legal responseTarget on canonical status_change", () => {
     const responseTarget = {
       mode: "socket" as const,
-      socketPath: "/tmp/devpilot.sock",
+      socketPath: "/tmp/codepal.sock",
       timeoutMs: 25000,
     };
     const ev = lineToSessionEvent(

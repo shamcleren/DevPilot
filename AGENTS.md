@@ -1,4 +1,4 @@
-# DevPilot Agent Guide
+# CodePal Agent Guide
 
 This repository continues to rely on the global superpowers workflow installed on this machine.
 
@@ -11,7 +11,7 @@ This repository continues to rely on the global superpowers workflow installed o
 
 ## Project Goal
 
-DevPilot is a floating monitoring panel for multiple IDEs and AI agents. Phase 1 focuses on unified monitoring, clear status visibility, and approval / structured-choice handling inside the panel.
+CodePal is a floating monitoring panel for multiple IDEs and AI agents. Phase 1 focuses on unified monitoring, clear status visibility, and approval / structured-choice handling inside the panel.
 
 ## Current Phase
 

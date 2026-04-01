@@ -1,10 +1,10 @@
 {
-  "name": "devpilot",
+  "name": "codepal",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "out/main/main.js",
-  "description": "Unified monitoring panel for multiple IDEs and AI agents.",
+  "description": "Friendly desktop companion for monitoring IDE and AI coding tasks.",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Shrink and bound `stale pending` windows in DevPilot by adding per-action close semantics, timeout-based cleanup, duplicate-response rejection, and immediate UI removal after close.
+**Goal:** Shrink and bound `stale pending` windows in CodePal by adding per-action close semantics, timeout-based cleanup, duplicate-response rejection, and immediate UI removal after close.
 
 **Architecture:** Keep the current `hook + socket` write-back path, extend upstream/session events with an optional per-action close signal, and let the session store own pending lifecycle state (`open -> consumed/expired`). Use a short-lived closed-action ledger for first-win duplicate rejection, and add a main-process sweep so pending cards cannot remain actionable forever when no close signal arrives.
 
@@ -14,7 +14,7 @@
 
 - Do not switch to ACP as part of this change.
 - Do not add `text_input` or broader interaction types.
-- Keep DevPilot additive: native agent flows must still work when DevPilot is absent.
+- Keep CodePal additive: native agent flows must still work when CodePal is absent.
 - Preserve the existing `action_response` JSON payload shape.
 - Prefer per-action close over coarse session-level clear, but keep `pendingAction: null` as compatibility fallback.
 - Do not create git commits unless the user explicitly asks for them.
@@ -53,7 +53,7 @@
 
 - Modify: `src/renderer/sessionBootstrap.test.ts`
   - Lock in push-update behavior when pending cards disappear
-- Modify: `tests/e2e/devpilot-action-response.e2e.ts`
+- Modify: `tests/e2e/codepal-action-response.e2e.ts`
   - Cover `pendingClosed` removal
   - Cover timeout expiry removal
   - Cover duplicate-response no-op after first-win
@@ -452,7 +452,7 @@ it("when action was already closed: returns false, logs duplicate, and does not 
   expect(transport.send).not.toHaveBeenCalled();
   expect(broadcastSessions).not.toHaveBeenCalled();
   expect(warnSpy).toHaveBeenCalledWith(
-    "[DevPilot] duplicate action_response ignored:",
+    "[CodePal] duplicate action_response ignored:",
     "s1",
     "act-1",
   );
@@ -493,7 +493,7 @@ export async function dispatchActionResponse(
   const prep = sessionStore.preparePendingActionResponse(sessionId, actionId, option);
   if (!prep) {
     if (sessionStore.isPendingActionClosed(sessionId, actionId)) {
-      console.warn("[DevPilot] duplicate action_response ignored:", sessionId, actionId);
+      console.warn("[CodePal] duplicate action_response ignored:", sessionId, actionId);
     }
     return false;
   }
@@ -549,7 +549,7 @@ Expected: PASS for fallback transport, per-request transport, no-clear-on-send-f
 
 **Files:**
 - Modify: `src/renderer/sessionBootstrap.test.ts`
-- Modify: `tests/e2e/devpilot-action-response.e2e.ts`
+- Modify: `tests/e2e/codepal-action-response.e2e.ts`
 
 - [ ] **Step 1: Add a renderer mapping test that a pushed session snapshot removes pending cards immediately**
 
@@ -574,8 +574,8 @@ it("rowsFromSessions reflects a push update that removes pendingActions", () => 
 
 ```ts
 test("remote consumed close removes only the matching pending card", async () => {
-  const devpilot = await launchDevPilot({ actionResponseSocketPath: collector.socketPath });
-  const page = await devpilot.app.firstWindow();
+  const codepal = await launchCodePal({ actionResponseSocketPath: collector.socketPath });
+  const page = await codepal.app.firstWindow();
 
   await sendStatusChange(
     {
@@ -591,7 +591,7 @@ test("remote consumed close removes only the matching pending card", async () =>
         options: ["OK"],
       },
     },
-    devpilot.ipcSocketPath,
+    codepal.ipcSocketPath,
   );
   await sendStatusChange(
     {
@@ -607,7 +607,7 @@ test("remote consumed close removes only the matching pending card", async () =>
         options: ["OK"],
       },
     },
-    devpilot.ipcSocketPath,
+    codepal.ipcSocketPath,
   );
 
   await expect(page.getByLabel("Approve A1")).toBeVisible();
@@ -625,7 +625,7 @@ test("remote consumed close removes only the matching pending card", async () =>
         reason: "consumed_remote",
       },
     },
-    devpilot.ipcSocketPath,
+    codepal.ipcSocketPath,
   );
 
   await expect(page.getByLabel("Approve A1")).toBeHidden();
@@ -637,8 +637,8 @@ test("remote consumed close removes only the matching pending card", async () =>
 
 ```ts
 test("expired pending is removed from the actionable UI", async () => {
-  const devpilot = await launchDevPilot({ actionResponseSocketPath: collector.socketPath });
-  const page = await devpilot.app.firstWindow();
+  const codepal = await launchCodePal({ actionResponseSocketPath: collector.socketPath });
+  const page = await codepal.app.firstWindow();
 
   await sendStatusChange(
     {
@@ -655,11 +655,11 @@ test("expired pending is removed from the actionable UI", async () => {
       },
       responseTarget: {
         mode: "socket",
-        socketPath: "/tmp/devpilot-unused.sock",
+        socketPath: "/tmp/codepal-unused.sock",
         timeoutMs: 150,
       },
     },
-    devpilot.ipcSocketPath,
+    codepal.ipcSocketPath,
   );
 
   await expect(page.getByLabel("Expire me")).toBeVisible();
@@ -673,7 +673,7 @@ test("expired pending is removed from the actionable UI", async () => {
 test("second response attempt after first-win is a no-op", async () => {
   const hook = startBlockingCursorHook({
     repoRoot,
-    ipcSocketPath: devpilot.ipcSocketPath,
+    ipcSocketPath: codepal.ipcSocketPath,
     payload: {
       type: "status_change",
       sessionId: "dup-session",
@@ -719,7 +719,7 @@ Expected: FAIL before implementation is complete, then PASS once close parsing, 
 
 ```md
 - Pending action write-back now rejects duplicate responses after first-win.
-- DevPilot can remove pending cards from explicit per-action close signals.
+- CodePal can remove pending cards from explicit per-action close signals.
 - Pending cards also expire out of the actionable UI after timeout if no close signal arrives.
 ```
 
