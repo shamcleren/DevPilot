@@ -5,6 +5,9 @@ import type { SessionRecord } from "../shared/sessionTypes";
  * presentation fields until IPC wiring lands.
  */
 export type MonitorSessionRow = SessionRecord & {
+  titleLabel: string;
+  shortId: string;
+  updatedLabel: string;
   durationLabel: string;
   activities: string[];
   hoverSummary: string;

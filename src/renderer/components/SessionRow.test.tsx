@@ -9,6 +9,9 @@ function baseRow(overrides: Partial<MonitorSessionRow> = {}): MonitorSessionRow 
     tool: "cursor",
     status: "waiting",
     updatedAt: Date.now(),
+    titleLabel: "CURSOR · review diff",
+    shortId: "s1",
+    updatedLabel: "04-02 16:00",
     durationLabel: "0s",
     activities: [],
     hoverSummary: "waiting",
@@ -31,6 +34,8 @@ describe("SessionRow pending action", () => {
             },
           ],
         })}
+        expanded
+        onToggleExpanded={vi.fn()}
         onRespond={onRespond}
       />,
     );
@@ -58,6 +63,8 @@ describe("SessionRow pending action", () => {
             },
           ],
         })}
+        expanded
+        onToggleExpanded={vi.fn()}
         onRespond={vi.fn()}
       />,
     );
@@ -73,19 +80,24 @@ describe("SessionRow pending action", () => {
 
   it("omits pending action UI when pendingActions is absent", () => {
     const html = renderToStaticMarkup(
-      <SessionRow session={baseRow()} onRespond={vi.fn()} />,
+      <SessionRow session={baseRow()} expanded={false} onToggleExpanded={vi.fn()} onRespond={vi.fn()} />,
     );
     expect(html).not.toContain("pending-action__title");
   });
 
   it("omits pending action UI when pendingActions is empty", () => {
     const html = renderToStaticMarkup(
-      <SessionRow session={baseRow({ pendingActions: [] })} onRespond={vi.fn()} />,
+      <SessionRow
+        session={baseRow({ pendingActions: [] })}
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
     );
     expect(html).not.toContain("pending-action__title");
   });
 
-  it("renders latest and recent activity sections in hover details", () => {
+  it("renders latest and recent activity sections in the expanded details panel", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
@@ -95,6 +107,8 @@ describe("SessionRow pending action", () => {
           ],
           hoverSummary: "scan repo",
         })}
+        expanded
+        onToggleExpanded={vi.fn()}
         onRespond={vi.fn()}
       />,
     );
@@ -105,5 +119,72 @@ describe("SessionRow pending action", () => {
     expect(html).toContain(
       "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
     );
+  });
+
+  it("renders title and secondary meta separately", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          titleLabel: "Codex · review diff",
+          tool: "codex",
+          task: "scan files",
+          shortId: "9af3",
+          updatedLabel: "04-02 16:01",
+        })}
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Codex · review diff");
+    expect(html).toContain("scan files");
+    expect(html).toContain("9af3");
+    expect(html).toContain("04-02 16:01");
+  });
+
+  it("renders pending actions inside the expanded details container", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          pendingActions: [
+            {
+              id: "a1",
+              type: "approval",
+              title: "Proceed?",
+              options: ["Yes", "No"],
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-row__details");
+    expect(html).toContain("Proceed?");
+  });
+
+  it("renders tool-specific marker classes for codex and cursor", () => {
+    const codexHtml = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({ tool: "codex" })}
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+    const cursorHtml = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({ tool: "cursor" })}
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(codexHtml).toContain("tool-icon--codex");
+    expect(cursorHtml).toContain("tool-icon--cursor");
   });
 });

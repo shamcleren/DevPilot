@@ -12,7 +12,7 @@ export type CodePalApi = {
   installIntegrationHooks: (
     agentId: "cursor" | "codebuddy",
   ) => Promise<IntegrationInstallResult>;
-  openSettings: () => void;
+  onOpenSettings: (handler: () => void) => () => void;
   respondToPendingAction: (sessionId: string, actionId: string, option: string) => void;
 };
 

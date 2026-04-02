@@ -33,8 +33,15 @@ contextBridge.exposeInMainWorld("codepal", {
       agentId,
     }) as Promise<IntegrationInstallResult>;
   },
-  openSettings() {
-    ipcRenderer.send("codepal:open-settings");
+  onOpenSettings(handler: () => void) {
+    const channel = "codepal:open-settings";
+    const listener = () => {
+      handler();
+    };
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+    };
   },
   respondToPendingAction(sessionId: string, actionId: string, option: string) {
     ipcRenderer.send("codepal:action-response", { sessionId, actionId, option });

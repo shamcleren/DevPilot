@@ -11,12 +11,15 @@ import {
 
 /** 无 responseTarget.timeoutMs 时用于计算 pending 过期时间 */
 export const DEFAULT_PENDING_LIFECYCLE_TIMEOUT_MS = 25_000;
+export const SESSION_HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const MAX_HISTORY_SESSION_COUNT = 150;
 
 export type SessionEvent = {
   type?: string;
   sessionId: string;
   tool: string;
   status: SessionStatus;
+  title?: string;
   task?: string;
   timestamp: number;
   meta?: Record<string, unknown>;
@@ -41,6 +44,7 @@ type InternalSessionRecord = {
   id: string;
   tool: string;
   status: SessionStatus;
+  title?: string;
   task?: string;
   updatedAt: number;
   activities: string[];
@@ -71,8 +75,11 @@ function describeActivity(event: SessionEvent): string[] {
   const hookEventName = firstMetaString(event.meta, "hook_event_name");
   const notificationType = firstMetaString(event.meta, "notification_type");
   const toolName = firstMetaString(event.meta, "tool_name");
+  const unsupportedActionType = firstMetaString(event.meta, "unsupported_action_type");
 
-  if (hookEventName === "Notification" && notificationType) {
+  if (unsupportedActionType) {
+    lines.push(task ?? `Unsupported Cursor action: ${unsupportedActionType}`);
+  } else if (hookEventName === "Notification" && notificationType) {
     lines.push(`Notification (${notificationType}): ${task ?? capitalizeStatus(event.status)}`);
   } else if (hookEventName === "PreToolUse" && toolName) {
     lines.push(`Tool call: ${toolName}`);
@@ -108,6 +115,7 @@ function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
     id: internal.id,
     tool: internal.tool,
     status: internal.status,
+    ...(internal.title ? { title: internal.title } : {}),
     task: internal.task,
     updatedAt: internal.updatedAt,
     ...(internal.activities.length > 0 ? { activities: internal.activities } : {}),
@@ -119,6 +127,10 @@ function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
     ...base,
     pendingActions: [...internal.pendingById.values()].map((s) => s.action),
   };
+}
+
+function isCurrentStatus(status: SessionStatus): boolean {
+  return status === "running" || status === "waiting";
 }
 
 export function createSessionStore() {
@@ -216,6 +228,33 @@ export function createSessionStore() {
     return expiredAny;
   }
 
+  function expireStaleSessions(now: number): boolean {
+    const nextEntries = [...sessions.entries()]
+      .filter(([, session]) => {
+        if (isCurrentStatus(session.status)) {
+          return true;
+        }
+        return now - session.updatedAt < SESSION_HISTORY_RETENTION_MS;
+      })
+      .sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+
+    const currentEntries = nextEntries.filter(([, session]) => isCurrentStatus(session.status));
+    const historyEntries = nextEntries
+      .filter(([, session]) => !isCurrentStatus(session.status))
+      .slice(0, MAX_HISTORY_SESSION_COUNT);
+
+    const nextMap = new Map<string, InternalSessionRecord>([...currentEntries, ...historyEntries]);
+    if (nextMap.size === sessions.size) {
+      return false;
+    }
+
+    sessions.clear();
+    for (const [sessionId, session] of nextMap) {
+      sessions.set(sessionId, session);
+    }
+    return true;
+  }
+
   function isPendingActionClosed(sessionId: string, actionId: string): boolean {
     return sessions.get(sessionId)?.closedLedger.has(actionId) ?? false;
   }
@@ -276,6 +315,7 @@ export function createSessionStore() {
         id: event.sessionId,
         tool: event.tool,
         status: event.status,
+        title: event.title ?? prev?.title,
         task: event.task,
         updatedAt: event.timestamp,
         activities: mergeActivities(prev?.activities, describeActivity(event)),
@@ -293,6 +333,8 @@ export function createSessionStore() {
 
     expireStalePendingActions,
 
+    expireStaleSessions,
+
     isPendingActionClosed,
 
     /** 供尚未迁移到 prepare/complete 的调用方使用；等价于 prepare 后立刻 complete */
@@ -306,7 +348,9 @@ export function createSessionStore() {
     },
 
     getSessions(): SessionRecord[] {
-      return [...sessions.values()].map(toSessionRecord);
+      return [...sessions.values()]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(toSessionRecord);
     },
   };
 }

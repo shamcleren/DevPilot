@@ -28,6 +28,8 @@ describe("sessionBootstrap", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id: "s1",
+      titleLabel: "CURSOR · review change",
+      shortId: "s1",
       task: "review change",
       hoverSummary: "review change",
       activities: ["Waiting: review change", "Pending action: Pick one"],
@@ -74,5 +76,23 @@ describe("sessionBootstrap", () => {
     expect(afterPush).toHaveLength(1);
     expect(afterPush[0].id).toBe("s1");
     expect(afterPush[0].pendingActions ?? []).toEqual([]);
+  });
+
+  it("prefers shared title metadata over fallback title generation", () => {
+    const rows = rowsFromSessions([
+      {
+        id: "codex-123456",
+        tool: "codex",
+        status: "running",
+        title: "Repository audit",
+        task: "scan src tree",
+        updatedAt: 1_700_000_010_000,
+      },
+    ]);
+
+    expect(rows[0]).toMatchObject({
+      titleLabel: "Repository audit",
+      shortId: "3456",
+    });
   });
 });

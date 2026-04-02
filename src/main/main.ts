@@ -9,16 +9,17 @@ import { createIpcHub } from "./ipc/ipcHub";
 import { createSessionStore } from "./session/sessionStore";
 import { createTray } from "./tray/createTray";
 import { createFloatingWindow } from "./window/createFloatingWindow";
-import { createSettingsWindow } from "./window/createSettingsWindow";
+import { createCodexSessionWatcher } from "./codex/codexSessionWatcher";
 import type { SessionRecord } from "../shared/sessionTypes";
 
 const sessionStore = createSessionStore();
 const actionResponseTransport = createActionResponseTransport(process.env);
 
 let mainWindow: BrowserWindow | null = null;
-let settingsWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let pendingExpirySweepTimer: ReturnType<typeof setInterval> | null = null;
+let codexSessionWatcher: ReturnType<typeof createCodexSessionWatcher> | null = null;
+const debugCodex = process.env.CODEPAL_DEBUG_CODEX === "1";
 
 // Hook 入口已并入应用可执行文件；这里只保留一个可推导 legacy 路径形态的根目录。
 function resolveHookScriptsRoot() {
@@ -29,11 +30,21 @@ function broadcastSessions() {
   const win = mainWindow;
   if (!win || win.isDestroyed()) return;
   const payload: SessionRecord[] = sessionStore.getSessions();
+  if (debugCodex) {
+    console.log(
+      "[CodePal Sessions] broadcast",
+      payload.length,
+      payload.map((session) => `${session.tool}:${session.status}:${session.id}`),
+    );
+  }
   win.webContents.send("codepal:sessions", payload);
 }
 
 function sweepExpiredPendingActions() {
-  if (sessionStore.expireStalePendingActions(Date.now())) {
+  const now = Date.now();
+  const changed =
+    sessionStore.expireStalePendingActions(now) || sessionStore.expireStaleSessions(now);
+  if (changed) {
     broadcastSessions();
   }
 }
@@ -41,7 +52,17 @@ function sweepExpiredPendingActions() {
 function wireActionResponseIpc(
   integrationService: ReturnType<typeof createIntegrationService>,
 ) {
-  ipcMain.handle("codepal:get-sessions", () => sessionStore.getSessions());
+  ipcMain.handle("codepal:get-sessions", () => {
+    const sessions = sessionStore.getSessions();
+    if (debugCodex) {
+      console.log(
+        "[CodePal Sessions] get-sessions",
+        sessions.length,
+        sessions.map((session) => `${session.tool}:${session.status}:${session.id}`),
+      );
+    }
+    return sessions;
+  });
   ipcMain.handle("codepal:get-integration-diagnostics", () =>
     integrationService.getDiagnostics(),
   );
@@ -52,19 +73,11 @@ function wireActionResponseIpc(
       typeof (payload as Record<string, unknown>).agentId === "string"
         ? (payload as Record<string, unknown>).agentId
         : "";
-    if (agentId !== "cursor" && agentId !== "codebuddy") {
+    if (agentId !== "cursor" && agentId !== "codebuddy" && agentId !== "codex") {
       throw new Error("unsupported integration agent");
     }
     return integrationService.installHooks(agentId);
   });
-  ipcMain.on("codepal:open-settings", () => {
-    const win = getOrCreateSettingsWindow();
-    if (!win.isVisible()) {
-      win.show();
-    }
-    win.focus();
-  });
-
   ipcMain.on("codepal:action-response", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object") return;
     const p = payload as Record<string, unknown>;
@@ -94,19 +107,6 @@ function getOrCreateMainWindow(): BrowserWindow {
   mainWindow = win;
   win.on("closed", () => {
     mainWindow = null;
-  });
-  win.once("ready-to-show", () => win.show());
-  return win;
-}
-
-function getOrCreateSettingsWindow(): BrowserWindow {
-  if (settingsWindow && !settingsWindow.isDestroyed()) {
-    return settingsWindow;
-  }
-  const win = createSettingsWindow();
-  settingsWindow = win;
-  win.on("closed", () => {
-    settingsWindow = null;
   });
   win.once("ready-to-show", () => win.show());
   return win;
@@ -194,6 +194,8 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
         clearInterval(pendingExpirySweepTimer);
         pendingExpirySweepTimer = null;
       }
+      codexSessionWatcher?.stop();
+      codexSessionWatcher = null;
       if (tray && !tray.isDestroyed()) {
         tray.destroy();
       }
@@ -208,7 +210,7 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
 
     app.whenReady().then(() => {
       const integrationService = createIntegrationService({
-        homeDir: app.getPath("home"),
+        homeDir: process.env.CODEPAL_HOME_DIR?.trim() || app.getPath("home"),
         hookScriptsRoot: resolveHookScriptsRoot(),
         packaged: app.isPackaged,
         execPath: process.execPath,
@@ -217,6 +219,20 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
 
       wireActionResponseIpc(integrationService);
       wireIpcHub(integrationService);
+      codexSessionWatcher = createCodexSessionWatcher({
+        sessionsRoot:
+          process.env.CODEPAL_CODEX_SESSIONS_ROOT?.trim() ||
+          `${app.getPath("home")}/.codex/sessions`,
+        onEvent: (event) => {
+          sessionStore.applyEvent(event);
+          integrationService.recordEvent(event.tool, event.status, event.timestamp);
+          broadcastSessions();
+        },
+      });
+      void codexSessionWatcher.pollOnce().catch((error) => {
+        console.error("[CodePal Codex] initial poll failed:", (error as Error).message);
+      });
+      codexSessionWatcher.start();
       const win = getOrCreateMainWindow();
       win.webContents.once("dom-ready", () => {
         broadcastSessions();
@@ -230,11 +246,12 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
           next.focus();
         },
         onOpenSettings: () => {
-          const next = getOrCreateSettingsWindow();
+          const next = getOrCreateMainWindow();
           if (!next.isVisible()) {
             next.show();
           }
           next.focus();
+          next.webContents.send("codepal:open-settings");
         },
       });
 

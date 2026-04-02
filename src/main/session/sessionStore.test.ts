@@ -12,6 +12,7 @@ describe("createSessionStore", () => {
       sessionId: "s1",
       tool: "cursor",
       status: "running",
+      title: "Fix auth bug",
       task: "fix auth bug",
       timestamp: 1,
     });
@@ -20,8 +21,81 @@ describe("createSessionStore", () => {
       id: "s1",
       tool: "cursor",
       status: "running",
+      title: "Fix auth bug",
       task: "fix auth bug",
       activities: ["Running: fix auth bug"],
+    });
+  });
+
+  it("preserves session title from incoming event payloads", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "codex",
+      status: "running",
+      title: "Repo audit",
+      task: "scan files",
+      timestamp: 10,
+    });
+
+    expect(store.getSessions()[0]).toMatchObject({
+      id: "s1",
+      title: "Repo audit",
+    });
+  });
+
+  it("returns sessions ordered by most recent updatedAt first", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "older",
+      tool: "codex",
+      status: "completed",
+      task: "older",
+      timestamp: 10,
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "newer",
+      tool: "codex",
+      status: "running",
+      task: "newer",
+      timestamp: 20,
+    });
+
+    expect(store.getSessions().map((session) => session.id)).toEqual(["newer", "older"]);
+  });
+
+  it("updates a running Codex session to idle when an interrupted turn aborts", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-1",
+      tool: "codex",
+      status: "running",
+      task: "Working",
+      timestamp: 10,
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-1",
+      tool: "codex",
+      status: "idle",
+      task: "Turn aborted",
+      timestamp: 11,
+      meta: {
+        codex_event_type: "turn_aborted",
+      },
+    });
+
+    expect(store.getSessions()[0]).toMatchObject({
+      id: "codex-1",
+      status: "idle",
+      task: "Turn aborted",
     });
   });
 
@@ -108,6 +182,26 @@ describe("createSessionStore", () => {
     ]);
   });
 
+  it("surfaces unsupported cursor actions as visible degraded activities", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "cursor-unsupported",
+      tool: "cursor",
+      status: "waiting",
+      task: "Unsupported Cursor action: text_input",
+      timestamp: 20,
+      meta: {
+        hook_event_name: "Notification",
+        unsupported_action_type: "text_input",
+      },
+      pendingAction: null,
+    });
+
+    expect(store.getSessions()[0].activities).toEqual(["Unsupported Cursor action: text_input"]);
+  });
+
   it("does not persist sessions when status is not a known enum value", () => {
     const store = createSessionStore();
 
@@ -119,6 +213,56 @@ describe("createSessionStore", () => {
     });
 
     expect(store.getSessions()).toHaveLength(0);
+  });
+
+  it("expires only stale history sessions and keeps current sessions", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      sessionId: "done-1",
+      tool: "cursor",
+      status: "completed",
+      timestamp: 1,
+    });
+    store.applyEvent({
+      sessionId: "live-1",
+      tool: "cursor",
+      status: "running",
+      timestamp: 2,
+    });
+
+    expect(store.expireStaleSessions(8 * 24 * 60 * 60 * 1000)).toBe(true);
+    expect(store.getSessions().map((session) => session.id)).toEqual(["live-1"]);
+  });
+
+  it("trims history to the newest retained sessions without dropping current sessions", () => {
+    const store = createSessionStore();
+
+    for (let index = 0; index < 152; index += 1) {
+      store.applyEvent({
+        sessionId: `history-${index}`,
+        tool: "codex",
+        status: "completed",
+        timestamp: 1_000 + index,
+      });
+    }
+
+    store.applyEvent({
+      sessionId: "live-1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 999_999,
+    });
+
+    expect(store.expireStaleSessions(999_999)).toBe(true);
+
+    const ids = store.getSessions().map((session) => session.id);
+    expect(ids).toContain("live-1");
+    expect(ids).toContain("history-151");
+    expect(ids).toContain("history-2");
+    expect(ids).not.toContain("history-1");
+    expect(ids).not.toContain("history-0");
+    expect(ids).toHaveLength(151);
   });
 
   it("stores pendingAction from status_change envelope as pendingActions", () => {

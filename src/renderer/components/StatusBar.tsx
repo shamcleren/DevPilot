@@ -11,18 +11,17 @@ type StatusBarProps = {
 export function StatusBar({ counts }: StatusBarProps) {
   return (
     <section className="status-bar" aria-label="Task status distribution">
-      <span className="status-bar__label">Status</span>
       <div className="status-chip status-chip--running">
         <span className="status-chip__dot" aria-hidden />
-        <span>Running {counts.running}</span>
+        <span>Run {counts.running}</span>
       </div>
       <div className="status-chip status-chip--waiting">
         <span className="status-chip__dot" aria-hidden />
-        <span>Waiting {counts.waiting}</span>
+        <span>Wait {counts.waiting}</span>
       </div>
       <div className="status-chip status-chip--error">
         <span className="status-chip__dot" aria-hidden />
-        <span>Error {counts.error}</span>
+        <span>Err {counts.error}</span>
       </div>
     </section>
   );

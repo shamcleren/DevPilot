@@ -95,6 +95,7 @@ export interface SessionRecord {
   id: string;
   tool: string;
   status: SessionStatus;
+  title?: string;
   task?: string;
   updatedAt: number;
   activities?: string[];

@@ -4,6 +4,7 @@ import { HoverDetails } from "./HoverDetails";
 
 const KNOWN_TOOLS: Record<string, { badge: string; label: string }> = {
   cursor: { badge: "C", label: "Cursor" },
+  codex: { badge: "CX", label: "Codex" },
   pycharm: { badge: "P", label: "PyCharm" },
   codebuddy: { badge: "CB", label: "CodeBuddy" },
 };
@@ -42,43 +43,62 @@ function statusPresentation(status: SessionStatus): { className: string; label: 
 
 type SessionRowProps = {
   session: MonitorSessionRow;
+  expanded: boolean;
+  onToggleExpanded: (sessionId: string) => void;
   onRespond: (sessionId: string, actionId: string, option: string) => void;
 };
 
-export function SessionRow({ session, onRespond }: SessionRowProps) {
+export function SessionRow({ session, expanded, onToggleExpanded, onRespond }: SessionRowProps) {
   const meta = toolDisplay(session.tool);
   const { className: stateClass, label: stateLabel } = statusPresentation(session.status);
-  const taskText = session.task ?? "";
 
   return (
-    <div className="session-row-wrap">
-      <div className="session-row" aria-label={`${meta.label} ${stateLabel}`}>
-        <span className="tool-icon" title={meta.label}>
+    <article className={`session-row ${expanded ? "session-row--expanded" : ""}`}>
+      <button
+        type="button"
+        className="session-row__summary"
+        aria-label={`${meta.label} ${stateLabel}`}
+        onClick={() => onToggleExpanded(session.id)}
+      >
+        <span className={`tool-icon tool-icon--${session.tool}`} title={meta.label}>
           {meta.badge}
         </span>
-        <span className="tool-name">{meta.label}</span>
-        <span className={`state ${stateClass}`}>{stateLabel}</span>
-        <span className="task">{taskText}</span>
-        <span className="duration">{session.durationLabel}</span>
-      </div>
-      <HoverDetails activities={session.activities} summary={session.hoverSummary} />
-      {(session.pendingActions ?? []).map((action) => (
-        <div key={action.id} className="pending-action" aria-label={action.title}>
-          <div className="pending-action__title">{action.title}</div>
-          <div className="pending-action__actions">
-            {action.options.map((option) => (
-              <button
-                key={`${action.id}:${option}`}
-                type="button"
-                className="pending-action__btn"
-                onClick={() => onRespond(session.id, action.id, option)}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
+        <span className="session-row__main">
+          <span className="session-row__topline">
+            <span className="tool-name">{meta.label}</span>
+            <span className="session-row__title">{session.titleLabel}</span>
+            <span className={`state ${stateClass}`}>{stateLabel}</span>
+          </span>
+          <span className="session-row__meta">
+            <span className="session-row__task">{session.task ?? "No task details"}</span>
+            <span className="session-row__meta-item">{session.updatedLabel}</span>
+            <span className="session-row__meta-item">{session.durationLabel}</span>
+            <span className="session-row__meta-item">#{session.shortId}</span>
+          </span>
+        </span>
+      </button>
+      {expanded ? (
+        <div className="session-row__details">
+          <HoverDetails activities={session.activities} summary={session.hoverSummary} />
+          {(session.pendingActions ?? []).map((action) => (
+            <div key={action.id} className="pending-action" aria-label={action.title}>
+              <div className="pending-action__title">{action.title}</div>
+              <div className="pending-action__actions">
+                {action.options.map((option) => (
+                  <button
+                    key={`${action.id}:${option}`}
+                    type="button"
+                    className="pending-action__btn"
+                    onClick={() => onRespond(session.id, action.id, option)}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      ) : null}
+    </article>
   );
 }
