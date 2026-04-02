@@ -336,6 +336,7 @@ describe("createSessionStore", () => {
     expect(rec.pendingActions).toEqual([
       expect.objectContaining({ id: "keep-me" }),
     ]);
+    expect(rec.activities?.[0]).toBe("Closed action remove-me (consumed_local)");
     expect(store.isPendingActionClosed("s1", "remove-me")).toBe(true);
     expect(store.preparePendingActionResponse("s1", "remove-me", "OK")).toBeNull();
   });
@@ -488,6 +489,7 @@ describe("createSessionStore", () => {
     store.closePendingAction("s1", "a1", "cancelled");
     const rec = store.getSessions()[0];
     expect(rec.pendingActions).toEqual([expect.objectContaining({ id: "a2" })]);
+    expect(rec.activities?.[0]).toBe("Closed action a1 (cancelled)");
     expect(store.isPendingActionClosed("s1", "a1")).toBe(true);
     expect(store.isPendingActionClosed("s1", "a2")).toBe(false);
   });
@@ -589,6 +591,7 @@ describe("createSessionStore", () => {
     expect(store.expireStalePendingActions(1_500)).toBe(true);
     const rec = store.getSessions()[0];
     expect(rec.pendingActions?.map((a) => a.id)).toEqual(["fresh"]);
+    expect(rec.activities?.[0]).toBe("Closed action stale (expired)");
     expect(store.isPendingActionClosed("s1", "stale")).toBe(true);
     expect(store.isPendingActionClosed("s1", "fresh")).toBe(false);
     expect(store.preparePendingActionResponse("s1", "stale", "OK")).toBeNull();

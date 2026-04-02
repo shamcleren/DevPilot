@@ -99,6 +99,10 @@ function mergeActivities(previous: string[] | undefined, nextLines: string[]): s
   return [...new Set([...nextLines, ...(previous ?? [])])].slice(0, MAX_ACTIVITY_LINES);
 }
 
+function prependActivity(previous: string[] | undefined, line: string): string[] {
+  return mergeActivities(previous, [line]);
+}
+
 function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
   const base: SessionRecord = {
     id: internal.id,
@@ -150,6 +154,7 @@ export function createSessionStore() {
     nextLedger.set(actionId, "consumed_local");
     sessions.set(sessionId, {
       ...internal,
+      activities: prependActivity(internal.activities, `Closed action ${actionId} (consumed_local)`),
       pendingById: nextMap,
       closedLedger: nextLedger,
       updatedAt: Date.now(),
@@ -171,6 +176,7 @@ export function createSessionStore() {
     nextLedger.set(actionId, reason);
     sessions.set(sessionId, {
       ...internal,
+      activities: prependActivity(internal.activities, `Closed action ${actionId} (${reason})`),
       pendingById: nextMap,
       closedLedger: nextLedger,
       updatedAt: Date.now(),
@@ -198,6 +204,10 @@ export function createSessionStore() {
       }
       sessions.set(sessionId, {
         ...internal,
+        activities: mergeActivities(
+          internal.activities,
+          expiredIds.map((id) => `Closed action ${id} (expired)`),
+        ),
         pendingById: nextMap,
         closedLedger: nextLedger,
         updatedAt: now,
