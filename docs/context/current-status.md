@@ -12,7 +12,7 @@
 ### App Shell
 
 - Electron main process, preload bridge, tray, and floating window shell
-- Renderer monitoring panel with status bar, session rows, hover details, plus a separate settings window for integrations
+- Renderer monitoring panel with status bar, session rows, recent-activity hover details, plus a separate settings window for integrations
 - Shared session and payload types in `src/shared/`
 
 ### Monitoring Flow
@@ -97,11 +97,11 @@ npm run dist:mac
 - PyCharm / CodeBuddy plugin-specific payloads are still outside the calibrated mainline; this round only stabilizes CodeBuddy CLI / hook payloads
 - Cursor auto-config currently enables only the minimal lifecycle hook bridge; it does not recreate the full pending-action semantics from the existing custom `StatusChange` path
 - The current macOS test build has moved to the executable hook path, but still does not include formal signing / notarization
-- Activity flow in the UI is still shallow compared with the full design intent
+- Activity flow is now visible through recent hover timelines, but deeper event richness and grouping are still below the full design intent
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
 ## Recommended Next Steps
 
-1. Add richer activity events into session state and renderer
-2. Package hook forwarding into a more self-contained runtime so test builds do not depend on system `node` / `python3`
-3. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix
+1. Enrich activity events further with more source-specific grouping and wording
+2. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix
+3. Expand richer IDE-specific context after the current protocol remains stable
