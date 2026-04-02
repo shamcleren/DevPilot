@@ -84,6 +84,10 @@ describe("lineToSessionEvent", () => {
       tool: "codebuddy",
       status: "waiting",
       task: "CodeBuddy needs your permission to use Bash",
+      meta: {
+        hook_event_name: "Notification",
+        notification_type: "permission_prompt",
+      },
     });
   });
 

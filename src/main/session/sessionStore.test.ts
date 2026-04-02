@@ -72,6 +72,42 @@ describe("createSessionStore", () => {
     ]);
   });
 
+  it("uses event meta to produce richer activity descriptions", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "cb-1",
+      tool: "codebuddy",
+      status: "waiting",
+      task: "CodeBuddy needs your permission to use Bash",
+      timestamp: 10,
+      meta: {
+        hook_event_name: "Notification",
+        notification_type: "permission_prompt",
+        tool_name: "Bash",
+      },
+    });
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "cb-1",
+      tool: "codebuddy",
+      status: "running",
+      task: "Bash",
+      timestamp: 11,
+      meta: {
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+      },
+    });
+
+    expect(store.getSessions()[0].activities).toEqual([
+      "Tool call: Bash",
+      "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
+    ]);
+  });
+
   it("does not persist sessions when status is not a known enum value", () => {
     const store = createSessionStore();
 

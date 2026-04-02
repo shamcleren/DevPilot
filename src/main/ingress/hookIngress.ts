@@ -129,6 +129,7 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     status: normalized.status,
     task: normalized.task,
     timestamp: normalized.timestamp,
+    ...(normalized.meta !== undefined ? { meta: normalized.meta } : {}),
     ...(pendingPart !== undefined ? { pendingAction: pendingPart } : {}),
     ...(responseTargetPart !== undefined ? { responseTarget: responseTargetPart } : {}),
     ...(pendingClosedPart !== undefined ? { pendingClosed: pendingClosedPart } : {}),

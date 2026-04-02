@@ -19,6 +19,7 @@ export type SessionEvent = {
   status: SessionStatus;
   task?: string;
   timestamp: number;
+  meta?: Record<string, unknown>;
   /** 未出现则保留原值；null 表示清除 */
   pendingAction?: PendingAction | null;
   /** 与 pendingAction 同条事件可选携带；按 action upsert 时写入该 action 的运行时路由 */
@@ -59,10 +60,29 @@ function capitalizeStatus(status: SessionStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+function firstMetaString(meta: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = meta?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
 function describeActivity(event: SessionEvent): string[] {
   const lines: string[] = [];
   const task = event.task?.trim();
-  lines.push(task ? `${capitalizeStatus(event.status)}: ${task}` : capitalizeStatus(event.status));
+  const hookEventName = firstMetaString(event.meta, "hook_event_name");
+  const notificationType = firstMetaString(event.meta, "notification_type");
+  const toolName = firstMetaString(event.meta, "tool_name");
+
+  if (hookEventName === "Notification" && notificationType) {
+    lines.push(`Notification (${notificationType}): ${task ?? capitalizeStatus(event.status)}`);
+  } else if (hookEventName === "PreToolUse" && toolName) {
+    lines.push(`Tool call: ${toolName}`);
+  } else if (hookEventName === "SessionStart") {
+    lines.push(task ? `Session started: ${task}` : "Session started");
+  } else if (hookEventName === "SessionEnd") {
+    lines.push(task ? `Session ended: ${task}` : "Session ended");
+  } else {
+    lines.push(task ? `${capitalizeStatus(event.status)}: ${task}` : capitalizeStatus(event.status));
+  }
 
   if (event.pendingAction && event.pendingAction !== null) {
     lines.push(`Pending action: ${event.pendingAction.title}`);
@@ -76,7 +96,7 @@ function describeActivity(event: SessionEvent): string[] {
 }
 
 function mergeActivities(previous: string[] | undefined, nextLines: string[]): string[] {
-  return [...nextLines, ...(previous ?? [])].slice(0, MAX_ACTIVITY_LINES);
+  return [...new Set([...nextLines, ...(previous ?? [])])].slice(0, MAX_ACTIVITY_LINES);
 }
 
 function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
