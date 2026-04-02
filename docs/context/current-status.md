@@ -29,7 +29,7 @@
 
 ### Integration Settings
 
-- Main process diagnostics now expose the current CodePal listener endpoint, runtime dependency status (`node` / `python3`), and per-agent integration health (`active` / `repair_needed` / `not_configured`)
+- Main process diagnostics now expose the current CodePal listener endpoint, executable entrypoint, and per-agent integration health (`active` / `legacy_path` / `repair_needed` / `not_configured`)
 - UI can write or repair user-level hook config for:
   - `Cursor` via `~/.cursor/hooks.json`
   - `CodeBuddy` via `~/.codebuddy/settings.json`
@@ -78,8 +78,7 @@ Same `sessionId` may have multiple pending actions at once; each keeps its own o
 - `src/renderer/`: monitoring UI
 - `src/adapters/`: external event normalization
 - `src/shared/`: shared session and response payload types
-- `scripts/hooks/`: hook wrappers
-- `scripts/bridge/send-event.mjs`: bridge sender
+- `src/main/hook/`: executable hook CLI and bridge modules
 
 ## Validation Commands
 
@@ -97,7 +96,7 @@ npm run dist:mac
 
 - PyCharm / CodeBuddy plugin-specific payloads are still outside the calibrated mainline; this round only stabilizes CodeBuddy CLI / hook payloads
 - Cursor auto-config currently enables only the minimal lifecycle hook bridge; it does not recreate the full pending-action semantics from the existing custom `StatusChange` path
-- The current macOS test build still depends on locally available `node` and `python3` for hook wrapper execution, and does not include formal signing / notarization
+- The current macOS test build has moved to the executable hook path, but still does not include formal signing / notarization
 - Activity flow in the UI is still shallow compared with the full design intent
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
