@@ -5,13 +5,13 @@ import type {
 } from "../../shared/integrationTypes";
 import type { SessionRecord } from "../../shared/sessionTypes";
 
-contextBridge.exposeInMainWorld("devpilot", {
+contextBridge.exposeInMainWorld("codepal", {
   version: "0.1.0",
   getSessions() {
-    return ipcRenderer.invoke("devpilot:get-sessions") as Promise<SessionRecord[]>;
+    return ipcRenderer.invoke("codepal:get-sessions") as Promise<SessionRecord[]>;
   },
   onSessions(handler: (sessions: SessionRecord[]) => void) {
-    const channel = "devpilot:sessions";
+    const channel = "codepal:sessions";
     const listener = (
       _event: Electron.IpcRendererEvent,
       sessions: SessionRecord[],
@@ -25,15 +25,18 @@ contextBridge.exposeInMainWorld("devpilot", {
   },
   getIntegrationDiagnostics() {
     return ipcRenderer.invoke(
-      "devpilot:get-integration-diagnostics",
+      "codepal:get-integration-diagnostics",
     ) as Promise<IntegrationDiagnostics>;
   },
   installIntegrationHooks(agentId: "cursor" | "codebuddy") {
-    return ipcRenderer.invoke("devpilot:install-integration-hooks", {
+    return ipcRenderer.invoke("codepal:install-integration-hooks", {
       agentId,
     }) as Promise<IntegrationInstallResult>;
   },
+  openSettings() {
+    ipcRenderer.send("codepal:open-settings");
+  },
   respondToPendingAction(sessionId: string, actionId: string, option: string) {
-    ipcRenderer.send("devpilot:action-response", { sessionId, actionId, option });
+    ipcRenderer.send("codepal:action-response", { sessionId, actionId, option });
   },
 });

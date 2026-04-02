@@ -46,12 +46,42 @@ body {
   min-height: 100vh;
 }
 
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .app-title {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--text);
+}
+
+.app-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.app-settings-trigger {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated));
+  color: var(--text);
+  cursor: pointer;
+}
+
+.app-settings-trigger:hover {
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--border));
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-elevated));
 }
 
 /* Status bar — distribution visible at a glance */
@@ -153,8 +183,16 @@ body {
   color: var(--muted);
 }
 
+.integration-panel__subtitle {
+  margin-top: 6px;
+  max-width: 52ch;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
 .integration-panel__summary {
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--text);
 }
@@ -191,6 +229,15 @@ body {
   border-radius: 999px;
   background: rgba(99, 102, 241, 0.08);
   border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.integration-panel__runtime-path {
+  max-width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .integration-panel__feedback,
@@ -255,20 +302,33 @@ body {
   border-radius: 999px;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  flex-shrink: 0;
 }
 
-.hook-badge--installed {
+.hook-badge--active {
   color: var(--running);
   background: var(--running-bg);
   border: 1px solid color-mix(in srgb, var(--running) 35%, transparent);
 }
 
-.hook-badge--missing {
+.hook-badge--repair {
+  color: var(--error);
+  background: var(--error-bg);
+  border: 1px solid color-mix(in srgb, var(--error) 35%, transparent);
+}
+
+.hook-badge--inactive {
   color: var(--waiting);
   background: var(--waiting-bg);
   border: 1px solid color-mix(in srgb, var(--waiting) 35%, transparent);
+}
+
+.hook-badge--legacy {
+  color: var(--waiting);
+  background: var(--waiting-bg);
+  border: 1px solid color-mix(in srgb, var(--waiting) 45%, transparent);
 }
 
 /* Session list */

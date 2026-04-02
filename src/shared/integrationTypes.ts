@@ -2,6 +2,12 @@ import type { SessionStatus } from "./sessionTypes";
 
 export type IntegrationAgentId = "cursor" | "codebuddy";
 
+export type IntegrationHealth =
+  | "active"
+  | "repair_needed"
+  | "not_configured"
+  | "legacy_path";
+
 export interface IntegrationListenerDiagnostics {
   mode: "tcp" | "socket" | "unavailable";
   host?: string;
@@ -13,10 +19,8 @@ export interface IntegrationListenerDiagnostics {
 export interface IntegrationRuntimeDiagnostics {
   packaged: boolean;
   hookScriptsRoot: string;
-  dependencies: {
-    node: boolean;
-    python3: boolean;
-  };
+  executablePath: string;
+  executableLabel: string;
 }
 
 export interface IntegrationAgentDiagnostics {
@@ -28,6 +32,9 @@ export interface IntegrationAgentDiagnostics {
   hookScriptPath: string;
   hookScriptExists: boolean;
   hookInstalled: boolean;
+  health: IntegrationHealth;
+  healthLabel: string;
+  actionLabel: string;
   statusMessage: string;
   lastEventAt?: number;
   lastEventStatus?: SessionStatus;
@@ -44,6 +51,7 @@ export interface IntegrationInstallResult {
   configPath: string;
   changed: boolean;
   hookInstalled: boolean;
+  health: IntegrationHealth;
   backupPath?: string;
   message: string;
   diagnostics: IntegrationAgentDiagnostics;

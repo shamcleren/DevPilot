@@ -4,7 +4,7 @@ import type {
 } from "../shared/integrationTypes";
 import type { SessionRecord } from "../shared/sessionTypes";
 
-export type DevPilotApi = {
+export type CodePalApi = {
   version: string;
   getSessions: () => Promise<SessionRecord[]>;
   onSessions: (handler: (sessions: SessionRecord[]) => void) => () => void;
@@ -12,12 +12,13 @@ export type DevPilotApi = {
   installIntegrationHooks: (
     agentId: "cursor" | "codebuddy",
   ) => Promise<IntegrationInstallResult>;
+  openSettings: () => void;
   respondToPendingAction: (sessionId: string, actionId: string, option: string) => void;
 };
 
 declare global {
   interface Window {
-    devpilot: DevPilotApi;
+    codepal: CodePalApi;
   }
 }
 

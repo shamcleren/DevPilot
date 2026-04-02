@@ -1,33 +1,35 @@
-import { BrowserWindow, app, ipcMain } from "electron";
+import { BrowserWindow, Tray, app, ipcMain } from "electron";
 import fs from "node:fs";
-import path from "node:path";
 import { createActionResponseTransport } from "./actionResponse/createActionResponseTransport";
 import { dispatchActionResponse } from "./actionResponse/dispatchActionResponse";
+import { HOOK_CLI_NOT_HOOK_MODE, runHookCli } from "./hook/runHookCli";
 import { lineToSessionEvent } from "./ingress/hookIngress";
 import { createIntegrationService } from "./integrations/integrationService";
 import { createIpcHub } from "./ipc/ipcHub";
 import { createSessionStore } from "./session/sessionStore";
 import { createTray } from "./tray/createTray";
 import { createFloatingWindow } from "./window/createFloatingWindow";
+import { createSettingsWindow } from "./window/createSettingsWindow";
 import type { SessionRecord } from "../shared/sessionTypes";
 
 const sessionStore = createSessionStore();
 const actionResponseTransport = createActionResponseTransport(process.env);
 
 let mainWindow: BrowserWindow | null = null;
+let settingsWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let pendingExpirySweepTimer: ReturnType<typeof setInterval> | null = null;
 
+// Hook 入口已并入应用可执行文件；这里只保留一个可推导 legacy 路径形态的根目录。
 function resolveHookScriptsRoot() {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "scripts", "hooks")
-    : path.join(app.getAppPath(), "scripts", "hooks");
+  return app.getAppPath();
 }
 
 function broadcastSessions() {
   const win = mainWindow;
   if (!win || win.isDestroyed()) return;
   const payload: SessionRecord[] = sessionStore.getSessions();
-  win.webContents.send("devpilot:sessions", payload);
+  win.webContents.send("codepal:sessions", payload);
 }
 
 function sweepExpiredPendingActions() {
@@ -39,11 +41,11 @@ function sweepExpiredPendingActions() {
 function wireActionResponseIpc(
   integrationService: ReturnType<typeof createIntegrationService>,
 ) {
-  ipcMain.handle("devpilot:get-sessions", () => sessionStore.getSessions());
-  ipcMain.handle("devpilot:get-integration-diagnostics", () =>
+  ipcMain.handle("codepal:get-sessions", () => sessionStore.getSessions());
+  ipcMain.handle("codepal:get-integration-diagnostics", () =>
     integrationService.getDiagnostics(),
   );
-  ipcMain.handle("devpilot:install-integration-hooks", (_event, payload: unknown) => {
+  ipcMain.handle("codepal:install-integration-hooks", (_event, payload: unknown) => {
     const agentId =
       payload &&
       typeof payload === "object" &&
@@ -55,8 +57,15 @@ function wireActionResponseIpc(
     }
     return integrationService.installHooks(agentId);
   });
+  ipcMain.on("codepal:open-settings", () => {
+    const win = getOrCreateSettingsWindow();
+    if (!win.isVisible()) {
+      win.show();
+    }
+    win.focus();
+  });
 
-  ipcMain.on("devpilot:action-response", (_event, payload: unknown) => {
+  ipcMain.on("codepal:action-response", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object") return;
     const p = payload as Record<string, unknown>;
     const sessionId = typeof p.sessionId === "string" ? p.sessionId : "";
@@ -72,7 +81,7 @@ function wireActionResponseIpc(
       actionId,
       option,
     ).catch((err) => {
-      console.error("[DevPilot] action_response transport error:", err);
+      console.error("[CodePal] action_response transport error:", err);
     });
   });
 }
@@ -90,6 +99,19 @@ function getOrCreateMainWindow(): BrowserWindow {
   return win;
 }
 
+function getOrCreateSettingsWindow(): BrowserWindow {
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    return settingsWindow;
+  }
+  const win = createSettingsWindow();
+  settingsWindow = win;
+  win.on("closed", () => {
+    settingsWindow = null;
+  });
+  win.once("ready-to-show", () => win.show());
+  return win;
+}
+
 function wireIpcHub(integrationService: ReturnType<typeof createIntegrationService>) {
   const { server } = createIpcHub((line) => {
     const event = lineToSessionEvent(line);
@@ -101,10 +123,10 @@ function wireIpcHub(integrationService: ReturnType<typeof createIntegrationServi
   });
 
   server.on("error", (err: NodeJS.ErrnoException) => {
-    console.error("[DevPilot IPC] server error:", err.message, err.code ?? "");
+    console.error("[CodePal IPC] server error:", err.message, err.code ?? "");
   });
 
-  const socketPath = process.env.DEVPILOT_SOCKET_PATH?.trim();
+  const socketPath = process.env.CODEPAL_SOCKET_PATH?.trim();
 
   if (socketPath) {
     try {
@@ -113,7 +135,7 @@ function wireIpcHub(integrationService: ReturnType<typeof createIntegrationServi
       const code = (err as NodeJS.ErrnoException).code;
       if (code !== "ENOENT") {
         console.error(
-          "[DevPilot IPC] could not remove existing socket file:",
+          "[CodePal IPC] could not remove existing socket file:",
           socketPath,
           (err as Error).message,
           code ?? "",
@@ -126,74 +148,107 @@ function wireIpcHub(integrationService: ReturnType<typeof createIntegrationServi
         mode: "socket",
         socketPath,
       });
-      console.log(`[DevPilot IPC] listening on unix socket ${socketPath}`);
+      console.log(`[CodePal IPC] listening on unix socket ${socketPath}`);
     });
-  } else {
-    const port = process.env.DEVPILOT_IPC_PORT
-      ? Number(process.env.DEVPILOT_IPC_PORT)
-      : 17371;
-    const host = "127.0.0.1";
+    return;
+  }
 
-    if (!Number.isFinite(port) || port <= 0 || port > 65535) {
-      integrationService.setListenerDiagnostics({
-        mode: "unavailable",
-        message: "DEVPILOT_IPC_PORT 无效",
-      });
-      console.error(
-        "[DevPilot IPC] invalid DEVPILOT_IPC_PORT; expected 1–65535, got:",
-        process.env.DEVPILOT_IPC_PORT,
-      );
+  const rawPort = process.env.CODEPAL_IPC_PORT;
+  const port = rawPort ? Number(rawPort) : 17371;
+  const host = "127.0.0.1";
+
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    integrationService.setListenerDiagnostics({
+      mode: "unavailable",
+      message: "CODEPAL_IPC_PORT 无效",
+    });
+    console.error(
+      "[CodePal IPC] invalid CODEPAL_IPC_PORT; expected 1–65535, got:",
+      rawPort,
+    );
+    return;
+  }
+
+  server.listen(port, host, () => {
+    integrationService.setListenerDiagnostics({
+      mode: "tcp",
+      host,
+      port,
+    });
+    const addr = server.address();
+    if (addr && typeof addr !== "string") {
+      console.log(`[CodePal IPC] listening on ${host}:${addr.port}`);
+    }
+  });
+}
+
+void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, process.env)
+  .then((hookExitCode) => {
+    if (hookExitCode !== HOOK_CLI_NOT_HOOK_MODE) {
+      process.exit(hookExitCode);
       return;
     }
 
-    server.listen(port, host, () => {
-      integrationService.setListenerDiagnostics({
-        mode: "tcp",
-        host,
-        port,
-      });
-      const addr = server.address();
-      if (addr && typeof addr !== "string") {
-        console.log(`[DevPilot IPC] listening on ${host}:${addr.port}`);
+    app.on("before-quit", () => {
+      if (pendingExpirySweepTimer !== null) {
+        clearInterval(pendingExpirySweepTimer);
+        pendingExpirySweepTimer = null;
+      }
+      if (tray && !tray.isDestroyed()) {
+        tray.destroy();
+      }
+      tray = null;
+    });
+
+    app.on("window-all-closed", () => {
+      if (process.platform !== "darwin") {
+        app.quit();
       }
     });
-  }
-}
 
-app.whenReady().then(() => {
-  const integrationService = createIntegrationService({
-    homeDir: app.getPath("home"),
-    hookScriptsRoot: resolveHookScriptsRoot(),
-    packaged: app.isPackaged,
+    app.whenReady().then(() => {
+      const integrationService = createIntegrationService({
+        homeDir: app.getPath("home"),
+        hookScriptsRoot: resolveHookScriptsRoot(),
+        packaged: app.isPackaged,
+        execPath: process.execPath,
+        appPath: app.getAppPath(),
+      });
+
+      wireActionResponseIpc(integrationService);
+      wireIpcHub(integrationService);
+      const win = getOrCreateMainWindow();
+      win.webContents.once("dom-ready", () => {
+        broadcastSessions();
+      });
+      tray = createTray({
+        onOpenMain: () => {
+          const next = getOrCreateMainWindow();
+          if (!next.isVisible()) {
+            next.show();
+          }
+          next.focus();
+        },
+        onOpenSettings: () => {
+          const next = getOrCreateSettingsWindow();
+          if (!next.isVisible()) {
+            next.show();
+          }
+          next.focus();
+        },
+      });
+
+      pendingExpirySweepTimer = setInterval(sweepExpiredPendingActions, 1_000);
+
+      app.on("activate", () => {
+        const activeWindow = getOrCreateMainWindow();
+        if (!activeWindow.isVisible()) {
+          activeWindow.show();
+        }
+      });
+    });
+  })
+  .catch((err) => {
+    console.error("[CodePal] hook CLI bootstrap error:", err);
+    process.exit(1);
   });
-
-  wireActionResponseIpc(integrationService);
-  wireIpcHub(integrationService);
-  const win = getOrCreateMainWindow();
-  win.webContents.once("dom-ready", () => {
-    broadcastSessions();
-  });
-  createTray();
-
-  pendingExpirySweepTimer = setInterval(sweepExpiredPendingActions, 1_000);
-
-  app.on("activate", () => {
-    const win = getOrCreateMainWindow();
-    if (!win.isVisible()) {
-      win.show();
-    }
-  });
-});
-
-app.on("before-quit", () => {
-  if (pendingExpirySweepTimer !== null) {
-    clearInterval(pendingExpirySweepTimer);
-    pendingExpirySweepTimer = null;
-  }
-});
-
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});

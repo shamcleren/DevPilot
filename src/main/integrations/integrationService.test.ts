@@ -1,35 +1,39 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createIntegrationService } from "./integrationService";
 
-function writeExecutable(path: string, body = "#!/usr/bin/env bash\nexit 0\n") {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, body, { mode: 0o755 });
+function writeExecutable(pathname: string, body = "#!/usr/bin/env bash\nexit 0\n") {
+  mkdirSync(dirname(pathname), { recursive: true });
+  writeFileSync(pathname, body, { mode: 0o755 });
 }
 
 function createFixtureLayout() {
-  const root = mkdtempSync(join(tmpdir(), "devpilot-integrations-"));
+  const root = mkdtempSync(join(tmpdir(), "codepal-integrations-"));
   const homeDir = join(root, "home");
-  const hookScriptsRoot = join(root, "app", "scripts", "hooks");
+  const appRoot = join(root, "app");
+  const hookScriptsRoot = join(appRoot, "scripts", "hooks");
   writeExecutable(join(hookScriptsRoot, "cursor-agent-hook.sh"));
   writeExecutable(join(hookScriptsRoot, "codebuddy-hook.sh"));
-  return { root, homeDir, hookScriptsRoot };
+  const execPath = join(root, "Electron.bin");
+  const appPath = appRoot;
+  return { root, homeDir, hookScriptsRoot, execPath, appPath };
 }
 
 describe("createIntegrationService", () => {
   afterEach(() => {
-    // Temp directories live under /tmp and are unique per test; explicit cleanup is not required here.
+    // temp dirs are unique per test run
   });
 
   it("reports listener diagnostics and unconfigured agents by default", () => {
-    const { homeDir, hookScriptsRoot } = createFixtureLayout();
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
     const service = createIntegrationService({
       homeDir,
       hookScriptsRoot,
       packaged: false,
-      commandExists: () => true,
+      execPath,
+      appPath,
     });
 
     service.setListenerDiagnostics({
@@ -45,30 +49,38 @@ describe("createIntegrationService", () => {
       host: "127.0.0.1",
       port: 17371,
     });
-    expect(diagnostics.runtime.dependencies).toEqual({ node: true, python3: true });
+    expect(diagnostics.runtime.packaged).toBe(false);
+    expect(diagnostics.runtime.executablePath).toBe(execPath);
+    expect(diagnostics.runtime.executableLabel).toContain("开发模式");
+    expect(diagnostics.runtime.executableLabel).toContain("Electron.bin");
     expect(diagnostics.agents).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: "cursor",
           configExists: false,
           hookInstalled: false,
+          health: "not_configured",
+          healthLabel: "未配置",
         }),
         expect.objectContaining({
           id: "codebuddy",
           configExists: false,
           hookInstalled: false,
+          health: "not_configured",
+          healthLabel: "未配置",
         }),
       ]),
     );
   });
 
   it("installs cursor user hooks idempotently", () => {
-    const { homeDir, hookScriptsRoot } = createFixtureLayout();
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
     const service = createIntegrationService({
       homeDir,
       hookScriptsRoot,
       packaged: false,
-      commandExists: () => true,
+      execPath,
+      appPath,
       now: () => 42,
     });
 
@@ -86,12 +98,12 @@ describe("createIntegrationService", () => {
       hooks: {
         sessionStart: [
           {
-            command: `"${join(hookScriptsRoot, "cursor-agent-hook.sh")}" sessionStart`,
+            command: `"${execPath}" "${appPath}" --codepal-hook cursor-lifecycle sessionStart`,
           },
         ],
         stop: [
           {
-            command: `"${join(hookScriptsRoot, "cursor-agent-hook.sh")}" stop`,
+            command: `"${execPath}" "${appPath}" --codepal-hook cursor-lifecycle stop`,
           },
         ],
       },
@@ -99,7 +111,7 @@ describe("createIntegrationService", () => {
   });
 
   it("installs codebuddy hooks without clobbering existing settings", () => {
-    const { homeDir, hookScriptsRoot } = createFixtureLayout();
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
     const configPath = join(homeDir, ".codebuddy", "settings.json");
     mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(
@@ -124,7 +136,8 @@ describe("createIntegrationService", () => {
       homeDir,
       hookScriptsRoot,
       packaged: false,
-      commandExists: () => true,
+      execPath,
+      appPath,
       now: () => 99,
     });
 
@@ -136,14 +149,12 @@ describe("createIntegrationService", () => {
     expect(parsed.hooks.SessionStart).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          hooks: expect.arrayContaining([
-            expect.objectContaining({ command: "echo existing" }),
-          ]),
+          hooks: expect.arrayContaining([expect.objectContaining({ command: "echo existing" })]),
         }),
         expect.objectContaining({
           hooks: expect.arrayContaining([
             expect.objectContaining({
-              command: `"${join(hookScriptsRoot, "codebuddy-hook.sh")}"`,
+              command: `"${execPath}" "${appPath}" --codepal-hook codebuddy`,
             }),
           ]),
         }),
@@ -153,17 +164,20 @@ describe("createIntegrationService", () => {
   });
 
   it("records the latest event status per agent", () => {
-    const { homeDir, hookScriptsRoot } = createFixtureLayout();
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
     const service = createIntegrationService({
       homeDir,
       hookScriptsRoot,
       packaged: true,
-      commandExists: () => true,
+      execPath,
+      appPath,
     });
 
     service.recordEvent("codebuddy", "waiting", 1234);
 
     const diagnostics = service.getDiagnostics();
+    expect(diagnostics.runtime.packaged).toBe(true);
+    expect(diagnostics.runtime.executableLabel).toContain("已打包");
     const codebuddy = diagnostics.agents.find((agent) => agent.id === "codebuddy");
     expect(codebuddy).toMatchObject({
       lastEventAt: 1234,
@@ -172,7 +186,7 @@ describe("createIntegrationService", () => {
   });
 
   it("refuses to overwrite incompatible existing hook config structures", () => {
-    const { homeDir, hookScriptsRoot } = createFixtureLayout();
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
     const configPath = join(homeDir, ".cursor", "hooks.json");
     mkdirSync(dirname(configPath), { recursive: true });
     writeFileSync(
@@ -187,13 +201,117 @@ describe("createIntegrationService", () => {
       homeDir,
       hookScriptsRoot,
       packaged: false,
-      commandExists: () => true,
+      execPath,
+      appPath,
     });
 
     expect(() => service.installHooks("cursor")).toThrow("Cursor hooks.json 结构不兼容");
     expect(JSON.parse(readFileSync(configPath, "utf8"))).toEqual({
       version: 1,
       hooks: [],
+    });
+  });
+
+  it("reports legacy_path for Cursor when hooks use shell script commands", () => {
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
+    const configPath = join(homeDir, ".cursor", "hooks.json");
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          sessionStart: [{ command: `"${join(hookScriptsRoot, "cursor-agent-hook.sh")}" sessionStart` }],
+          stop: [{ command: `"${join(hookScriptsRoot, "cursor-agent-hook.sh")}" stop` }],
+        },
+      }),
+    );
+
+    const service = createIntegrationService({
+      homeDir,
+      hookScriptsRoot,
+      packaged: false,
+      execPath,
+      appPath,
+    });
+
+    const cursor = service.getDiagnostics().agents.find((agent) => agent.id === "cursor");
+    expect(cursor).toMatchObject({
+      health: "legacy_path",
+      healthLabel: "待迁移",
+      actionLabel: "迁移",
+      hookInstalled: true,
+    });
+  });
+
+  it("reports legacy_path for Cursor when hooks use node bridge mjs commands", () => {
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
+    const configPath = join(homeDir, ".cursor", "hooks.json");
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          sessionStart: [{ command: "node ./scripts/bridge/cursor-lifecycle.mjs sessionStart" }],
+          stop: [{ command: "node ./scripts/bridge/cursor-lifecycle.mjs stop" }],
+        },
+      }),
+    );
+
+    const service = createIntegrationService({
+      homeDir,
+      hookScriptsRoot,
+      packaged: false,
+      execPath,
+      appPath,
+    });
+
+    const cursor = service.getDiagnostics().agents.find((agent) => agent.id === "cursor");
+    expect(cursor).toMatchObject({
+      health: "legacy_path",
+      hookInstalled: true,
+    });
+  });
+
+  it("reports legacy_path for CodeBuddy when hooks use shell script commands", () => {
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
+    const configPath = join(homeDir, ".codebuddy", "settings.json");
+    mkdirSync(dirname(configPath), { recursive: true });
+    const legacyCommand = `"${join(hookScriptsRoot, "codebuddy-hook.sh")}"`;
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          SessionStart: [{ hooks: [{ type: "command", command: legacyCommand }] }],
+          UserPromptSubmit: [{ hooks: [{ type: "command", command: legacyCommand }] }],
+          SessionEnd: [{ hooks: [{ type: "command", command: legacyCommand }] }],
+          Notification: [
+            {
+              matcher: "permission_prompt",
+              hooks: [{ type: "command", command: legacyCommand }],
+            },
+            { matcher: "idle_prompt", hooks: [{ type: "command", command: legacyCommand }] },
+          ],
+        },
+      }),
+    );
+
+    const service = createIntegrationService({
+      homeDir,
+      hookScriptsRoot,
+      packaged: false,
+      execPath,
+      appPath,
+    });
+
+    const codebuddy = service.getDiagnostics().agents.find((agent) => agent.id === "codebuddy");
+    expect(codebuddy).toMatchObject({
+      health: "legacy_path",
+      healthLabel: "待迁移",
+      actionLabel: "迁移",
+      hookInstalled: true,
     });
   });
 });

@@ -6,7 +6,22 @@ import { SessionList } from "./components/SessionList";
 import type { MonitorSessionRow } from "./monitorSession";
 import { hydrateRowsIfEmpty, rowsFromSessions } from "./sessionBootstrap";
 
-export function App() {
+export type AppView = "sessions" | "settings";
+
+function resolveInitialView(): AppView {
+  if (typeof window === "undefined") {
+    return "sessions";
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return params.get("view") === "settings" ? "settings" : "sessions";
+}
+
+type AppProps = {
+  initialView?: AppView;
+};
+
+export function App({ initialView = resolveInitialView() }: AppProps = {}) {
   const [rows, setRows] = useState<MonitorSessionRow[]>([]);
   const [integrationDiagnostics, setIntegrationDiagnostics] =
     useState<IntegrationDiagnostics | null>(null);
@@ -19,7 +34,7 @@ export function App() {
     setIntegrationLoading(true);
     setIntegrationError(null);
     setIntegrationFeedback(null);
-    void window.devpilot
+    void window.codepal
       .getIntegrationDiagnostics()
       .then((diagnostics) => {
         setIntegrationDiagnostics(diagnostics);
@@ -34,10 +49,10 @@ export function App() {
 
   useEffect(() => {
     let active = true;
-    const unsub = window.devpilot.onSessions((sessions) => {
+    const unsub = window.codepal.onSessions((sessions) => {
       setRows(rowsFromSessions(sessions));
     });
-    void window.devpilot.getSessions().then((sessions) => {
+    void window.codepal.getSessions().then((sessions) => {
       if (!active) {
         return;
       }
@@ -50,8 +65,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    refreshIntegrations();
-  }, []);
+    if (initialView === "settings") {
+      refreshIntegrations();
+    }
+  }, [initialView]);
 
   const counts = useMemo(
     () => ({
@@ -62,38 +79,63 @@ export function App() {
     [rows],
   );
 
+  if (initialView === "settings") {
+    return (
+      <div className="app app--settings">
+        <div className="app-header">
+          <div>
+            <h1 className="app-title">CodePal 设置</h1>
+            <p className="app-subtitle">低频的接入、修复和诊断操作都放在这里。</p>
+          </div>
+        </div>
+        <IntegrationPanel
+          diagnostics={integrationDiagnostics}
+          loading={integrationLoading}
+          installingAgentId={installingAgentId}
+          feedbackMessage={integrationFeedback}
+          errorMessage={integrationError}
+          onRefresh={refreshIntegrations}
+          onInstall={(agentId) => {
+            setInstallingAgentId(agentId);
+            setIntegrationError(null);
+            setIntegrationFeedback(null);
+            void window.codepal
+              .installIntegrationHooks(agentId)
+              .then((result) => {
+                setIntegrationFeedback(result.message);
+                return window.codepal.getIntegrationDiagnostics();
+              })
+              .then((diagnostics) => {
+                setIntegrationDiagnostics(diagnostics);
+              })
+              .catch((error: unknown) => {
+                setIntegrationError((error as Error).message);
+              })
+              .finally(() => {
+                setInstallingAgentId(null);
+              });
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
-      <h1 className="app-title">DevPilot</h1>
+      <div className="app-header">
+        <h1 className="app-title">CodePal</h1>
+        <button
+          type="button"
+          className="app-settings-trigger"
+          aria-label="打开设置"
+          onClick={() => {
+            window.codepal.openSettings();
+          }}
+        >
+          设置
+        </button>
+      </div>
       <StatusBar counts={counts} />
-      <IntegrationPanel
-        diagnostics={integrationDiagnostics}
-        loading={integrationLoading}
-        installingAgentId={installingAgentId}
-        feedbackMessage={integrationFeedback}
-        errorMessage={integrationError}
-        onRefresh={refreshIntegrations}
-        onInstall={(agentId) => {
-          setInstallingAgentId(agentId);
-          setIntegrationError(null);
-          setIntegrationFeedback(null);
-          void window.devpilot
-            .installIntegrationHooks(agentId)
-            .then((result) => {
-              setIntegrationFeedback(result.message);
-              return window.devpilot.getIntegrationDiagnostics();
-            })
-            .then((diagnostics) => {
-              setIntegrationDiagnostics(diagnostics);
-            })
-            .catch((error: unknown) => {
-              setIntegrationError((error as Error).message);
-            })
-            .finally(() => {
-              setInstallingAgentId(null);
-            });
-        }}
-      />
       {rows.length === 0 ? (
         <p className="app-hint" style={{ padding: "0 12px", opacity: 0.75 }}>
           等待来自 Cursor / CodeBuddy hook 的实时会话事件（IPC 端口默认 17371）。
@@ -102,7 +144,7 @@ export function App() {
       <SessionList
         sessions={rows}
         onRespond={(sessionId, actionId, option) => {
-          window.devpilot.respondToPendingAction(sessionId, actionId, option);
+          window.codepal.respondToPendingAction(sessionId, actionId, option);
         }}
       />
     </div>

@@ -17,7 +17,7 @@ export function createFloatingWindow(): BrowserWindow {
       preload: preloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
-      // ESM preload (`out/preload/index.mjs`) does not load under the default sandbox; `window.devpilot` stays undefined.
+      // ESM preload (`out/preload/index.mjs`) does not load under the default sandbox; `window.codepal` stays undefined.
       sandbox: false,
     },
   });

@@ -2,13 +2,13 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 
 export type StartBlockingHookOptions = {
-  /** Repository root (DevPilot project root). */
+  /** Repository root (CodePal project root). */
   repoRoot: string;
-  /** DevPilot IPC unix socket path (`DEVPILOT_SOCKET_PATH`). */
+  /** CodePal IPC unix socket path (`CODEPAL_SOCKET_PATH`). */
   ipcSocketPath: string;
   /** JSON object fed to hook stdin (same shape as `sendStatusChange` payloads). */
   payload: Record<string, unknown>;
-  /** Extra env vars (e.g. `DEVPILOT_HOOK_RESPONSE_WAIT_MS`). */
+  /** Extra env vars (e.g. `CODEPAL_HOOK_RESPONSE_WAIT_MS`). */
   env?: NodeJS.ProcessEnv;
 };
 
@@ -55,7 +55,7 @@ function collectFirstStdoutLine(child: ChildProcess): Promise<string> {
 
 /**
  * Runs the real Cursor hook wrapper (`scripts/hooks/cursor-hook.sh`): reads JSON from stdin,
- * forwards through `run-blocking-hook.mjs`, blocks until DevPilot delivers `action_response`
+ * forwards through `run-blocking-hook.mjs`, blocks until CodePal delivers `action_response`
  * to the per-event collector socket, then prints one line to stdout and exits.
  */
 export function startBlockingCursorHook(
@@ -67,7 +67,7 @@ export function startBlockingCursorHook(
     env: {
       ...process.env,
       ...options.env,
-      DEVPILOT_SOCKET_PATH: options.ipcSocketPath,
+      CODEPAL_SOCKET_PATH: options.ipcSocketPath,
     },
     stdio: ["pipe", "pipe", "pipe"],
   });

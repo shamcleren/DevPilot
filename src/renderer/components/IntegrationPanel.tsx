@@ -15,26 +15,35 @@ type IntegrationPanelProps = {
 };
 
 function listenerLabel(diagnostics: IntegrationDiagnostics | null): string {
-  if (!diagnostics) return "Loading listener diagnostics...";
+  if (!diagnostics) return "正在加载监听状态…";
   const { listener } = diagnostics;
   if (listener.mode === "tcp") {
-    return `TCP ${listener.host}:${listener.port}`;
+    return `监听中：TCP ${listener.host}:${listener.port}`;
   }
   if (listener.mode === "socket") {
-    return `Unix socket ${listener.socketPath}`;
+    return `监听中：Unix socket ${listener.socketPath}`;
   }
-  return listener.message ?? "Listener unavailable";
-}
-
-function dependencyLabel(name: string, available: boolean): string {
-  return `${name}: ${available ? "OK" : "Missing"}`;
+  return listener.message ?? "监听不可用";
 }
 
 function lastEventLabel(agent: IntegrationAgentDiagnostics): string {
   if (!agent.lastEventAt || !agent.lastEventStatus) {
-    return "Recent event: never";
+    return "最近事件：无";
   }
-  return `Recent event: ${agent.lastEventStatus} @ ${new Date(agent.lastEventAt).toISOString()}`;
+  return `最近事件：${agent.lastEventStatus} @ ${new Date(agent.lastEventAt).toISOString()}`;
+}
+
+function hookBadgeClass(agent: IntegrationAgentDiagnostics): string {
+  switch (agent.health) {
+    case "legacy_path":
+      return "hook-badge hook-badge--legacy";
+    case "active":
+      return "hook-badge hook-badge--active";
+    case "repair_needed":
+      return "hook-badge hook-badge--repair";
+    default:
+      return "hook-badge hook-badge--inactive";
+  }
 }
 
 export function IntegrationPanel({
@@ -49,10 +58,14 @@ export function IntegrationPanel({
   const runtime = diagnostics?.runtime;
 
   return (
-    <section className="integration-panel" aria-label="Integration settings">
+    <section className="integration-panel" aria-label="接入管理">
       <div className="integration-panel__header">
         <div>
-          <div className="integration-panel__title">Integrations</div>
+          <div className="integration-panel__title">CodePal Hook 命令</div>
+          <div className="integration-panel__subtitle">
+            管理本应用写入各编辑器的 hook 命令与迁移状态；新链路使用应用自身可执行入口，无需依赖外部
+            node/python3。
+          </div>
           <div className="integration-panel__summary">{listenerLabel(diagnostics)}</div>
         </div>
         <button
@@ -61,15 +74,17 @@ export function IntegrationPanel({
           onClick={onRefresh}
           disabled={loading}
         >
-          {loading ? "Refreshing..." : "Refresh"}
+          {loading ? "刷新中…" : "刷新"}
         </button>
       </div>
 
       {runtime ? (
         <div className="integration-panel__runtime">
-          <span>{runtime.packaged ? "Packaged app" : "Dev mode"}</span>
-          <span>{dependencyLabel("node", runtime.dependencies.node)}</span>
-          <span>{dependencyLabel("python3", runtime.dependencies.python3)}</span>
+          <span title={runtime.executablePath}>{runtime.executableLabel}</span>
+          <span className="integration-panel__runtime-path" title={runtime.executablePath}>
+            {runtime.executablePath}
+          </span>
+          <span>{runtime.packaged ? "打包构建" : "开发运行"}</span>
         </div>
       ) : null}
 
@@ -86,13 +101,7 @@ export function IntegrationPanel({
                   <div className="integration-card__name">{agent.label}</div>
                   <div className="integration-card__message">{agent.statusMessage}</div>
                 </div>
-                <span
-                  className={`hook-badge ${
-                    agent.hookInstalled ? "hook-badge--installed" : "hook-badge--missing"
-                  }`}
-                >
-                  {agent.hookInstalled ? "Installed" : "Not installed"}
-                </span>
+                <span className={hookBadgeClass(agent)}>{agent.healthLabel}</span>
               </div>
               <div className="integration-card__path">{agent.configPath}</div>
               <div className="integration-card__meta">{lastEventLabel(agent)}</div>
@@ -102,7 +111,7 @@ export function IntegrationPanel({
                 disabled={isInstalling}
                 onClick={() => onInstall(agent.id)}
               >
-                {isInstalling ? "Applying..." : agent.hookInstalled ? "Repair" : "Enable"}
+                {isInstalling ? "应用中…" : agent.actionLabel}
               </button>
             </article>
           );
