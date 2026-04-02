@@ -75,6 +75,21 @@ function isCodeBuddyRawPayload(o: Record<string, unknown>): boolean {
   );
 }
 
+function isCursorRawPayload(o: Record<string, unknown>): boolean {
+  if (o.source === "cursor" || o.tool === "cursor") return true;
+  return o.hook_event_name === "StatusChange";
+}
+
+function looksLikeCanonicalStatusChange(o: Record<string, unknown>): boolean {
+  return (
+    o.type === "status_change" &&
+    typeof o.sessionId === "string" &&
+    typeof o.tool === "string" &&
+    typeof o.status === "string" &&
+    typeof o.timestamp === "number"
+  );
+}
+
 /**
  * 将 hook / bridge 发来的一行 JSON 转为可写入 sessionStore 的事件。
  */
@@ -87,11 +102,14 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
   }
   if (!parsed || typeof parsed !== "object") return null;
   const o = parsed as Record<string, unknown>;
+  if (looksLikeCanonicalStatusChange(o) && !isStatusChangeUpstreamEvent(parsed)) {
+    return null;
+  }
 
   let normalized = null;
   if (isStatusChangeUpstreamEvent(parsed)) {
     normalized = parsed;
-  } else if (o.hook_event_name === "StatusChange") {
+  } else if (isCursorRawPayload(o)) {
     normalized = normalizeCursorEvent(o);
   } else if (isCodeBuddyRawPayload(o)) {
     normalized = normalizeCodeBuddyEvent(o);
@@ -130,6 +148,7 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     task: normalized.task,
     timestamp: normalized.timestamp,
     ...(normalized.meta !== undefined ? { meta: normalized.meta } : {}),
+    ...(normalized.activityItems !== undefined ? { activityItems: normalized.activityItems } : {}),
     ...(pendingPart !== undefined ? { pendingAction: pendingPart } : {}),
     ...(responseTargetPart !== undefined ? { responseTarget: responseTargetPart } : {}),
     ...(pendingClosedPart !== undefined ? { pendingClosed: pendingClosedPart } : {}),

@@ -21,11 +21,24 @@
 - TCP is supported by default
 - Unix socket path is also supported when `CODEPAL_SOCKET_PATH` is configured
 
+### Current Phase Focus
+
+- Phase 1 product validation now prioritizes Codex-first monitoring
+- Cursor remains available in-repo and can continue to be calibrated, but is no longer the only acceptance target
+- CodeBuddy and PyCharm remain future expansion items and are not part of the current delivery promise
+
 ### Current Adapters
 
-- Cursor normalizer plus a minimal official Cursor hook bridge for lifecycle events (`sessionStart` / `stop`)
-- CodeBuddy normalizer with fixture-driven CLI / hook calibration for explicit status fields plus documented hook events (`SessionStart`, `Notification`, `UserPromptSubmit`, `PreToolUse`, `SessionEnd`)
+- Codex session-log adapter now reads `~/.codex/sessions/**/*.jsonl` and maps recent active session files into the shared session model
+- Cursor normalizer plus executable hook bridge remain in-repo for ongoing calibration
+- CodeBuddy normalizer remains in-repo for future expansion, but is outside the current Phase 1 acceptance target
 - PyCharm is expected to integrate through CodeBuddy plugin payloads rather than a separate adapter
+- Cursor and Codex activity flow now normalize into shared `ActivityItem[]` session activity records before render
+- Expanded timeline now uses a unified visual hierarchy: message bubbles, execution-style tool cards, and lighter sideband notes/system rows
+- Single low-information terminal status notes such as `Working` / `Completed` are now suppressed in the expanded timeline because the top summary row already carries session state
+- Low-signal system sideband rows such as `File edited` are now suppressed alongside duplicate status tails, keeping Cursor/Codex closer to the same visual rhythm
+- Running sessions now use a sticky pseudo-reply loading indicator inside the expanded timeline footer instead of a duplicated top-row status marker
+- Cursor normalizer now covers a broader first-pass activity subset including assistant responses, shell/MCP/read tool calls, tool results, and file-edit system events
 
 ### Integration Settings
 
@@ -94,14 +107,19 @@ npm run dist:mac
 
 ## Known Gaps
 
-- PyCharm / CodeBuddy plugin-specific payloads are still outside the calibrated mainline; this round only stabilizes CodeBuddy CLI / hook payloads
-- Cursor auto-config currently enables only the minimal lifecycle hook bridge; it does not recreate the full pending-action semantics from the existing custom `StatusChange` path
+- Codex integration currently focuses on session/activity visibility; structured pending-action write-back is not implemented there yet
+- Cursor full hook-event calibration is still being expanded beyond the current normalized subset; unknown payloads should continue to be pushed down into adapter/normalizer work instead of renderer-side guessing
+- PyCharm / CodeBuddy plugin-specific payloads are intentionally outside the current Phase 1 acceptance target
 - The current macOS test build has moved to the executable hook path, but still does not include formal signing / notarization
-- Activity flow is now visible through recent hover timelines, but deeper event richness and grouping are still below the full design intent
+- Cursor payload calibration is still incomplete beyond the current normalized subset
+- Cursor still needs more real-payload calibration for edge-case hook variants and richer tool-result bodies
+- Tool card visual upgrade and long-text density optimization have landed in a first pass, but can still be refined after more real payload coverage arrives
+- Loading treatment is now clearer for running sessions, but still needs real-session validation to tune wording, prominence, and mixed message/tool timing edge cases
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
 ## Recommended Next Steps
 
-1. Enrich activity events further with more source-specific grouping and wording
-2. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix
-3. Expand richer IDE-specific context after the current protocol remains stable
+1. Keep expanding Cursor payload coverage so more source/tool/system distinctions are decided inside adapter normalization
+2. Refine execution-card content structure against real tool payloads, especially richer tool result and system event variants
+3. Continue tuning long-text density and loading prominence for mixed message/tool sessions without reintroducing source-specific renderer branching
+4. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix after the shared protocol remains stable

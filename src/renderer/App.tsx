@@ -93,9 +93,12 @@ export function App() {
   );
 
   return (
-    <div className="app">
+    <div className="app app-shell">
       <div className="app-header">
-        <h1 className="app-title">CodePal</h1>
+        <div className="app-header__meta">
+          <div className="app-kicker">Control Deck</div>
+          <h1 className="app-title">CodePal</h1>
+        </div>
         <button
           type="button"
           className="app-settings-trigger"

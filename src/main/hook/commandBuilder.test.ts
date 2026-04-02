@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCodeBuddyHookCommand,
+  buildCursorHookCommand,
   buildCursorLifecycleHookCommand,
   detectLegacyHookCommand,
 } from "./commandBuilder";
@@ -50,6 +51,26 @@ describe("commandBuilder", () => {
     });
   });
 
+  describe("buildCursorHookCommand", () => {
+    it("builds dev-mode cursor hook command", () => {
+      const command = buildCursorHookCommand({
+        packaged: false,
+        execPath: "/path/to/Electron",
+        appPath: "/path/to/repo",
+      });
+      expect(command).toBe('"/path/to/Electron" "/path/to/repo" --codepal-hook cursor');
+    });
+
+    it("builds packaged cursor hook command", () => {
+      const command = buildCursorHookCommand({
+        packaged: true,
+        execPath: "/Applications/CodePal.app/Contents/MacOS/CodePal",
+        appPath: "/ignored",
+      });
+      expect(command).toBe('"/Applications/CodePal.app/Contents/MacOS/CodePal" --codepal-hook cursor');
+    });
+  });
+
   describe("detectLegacyHookCommand", () => {
     it("detects scripts/hooks shell paths", () => {
       expect(detectLegacyHookCommand('"/my/app/scripts/hooks/cursor-agent-hook.sh" sessionStart')).toBe(
@@ -67,6 +88,7 @@ describe("commandBuilder", () => {
       expect(detectLegacyHookCommand('"/Electron" "/repo" --codepal-hook cursor-lifecycle sessionStart')).toBe(
         false,
       );
+      expect(detectLegacyHookCommand('"/Electron" "/repo" --codepal-hook cursor')).toBe(false);
       expect(detectLegacyHookCommand('"/CodePal" --codepal-hook codebuddy')).toBe(false);
     });
   });

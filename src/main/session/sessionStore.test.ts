@@ -23,7 +23,15 @@ describe("createSessionStore", () => {
       status: "running",
       title: "Fix auth bug",
       task: "fix auth bug",
-      activities: ["Running: fix auth bug"],
+      activityItems: [
+        {
+          kind: "note",
+          source: "system",
+          title: "Running",
+          body: "fix auth bug",
+          tone: "running",
+        },
+      ],
     });
   });
 
@@ -137,12 +145,12 @@ describe("createSessionStore", () => {
       },
     });
 
-    expect(store.getSessions()[0].activities).toEqual([
-      "Running: resumed work",
+    expect(store.getSessions()[0].activityItems?.map((item) => item.body)).toEqual([
+      "resumed work",
       "Closed action a1 (consumed_local)",
-      "Waiting: request approval",
-      "Pending action: Continue?",
-      "Running: scan repo",
+      "request approval",
+      "Continue?",
+      "scan repo",
     ]);
   });
 
@@ -176,9 +184,59 @@ describe("createSessionStore", () => {
       },
     });
 
-    expect(store.getSessions()[0].activities).toEqual([
-      "Tool call: Bash",
-      "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
+    expect(store.getSessions()[0].activityItems).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        title: "Bash",
+        toolName: "Bash",
+        toolPhase: "call",
+      }),
+      expect.objectContaining({
+        kind: "note",
+        title: "Notification",
+        tone: "waiting",
+      }),
+    ]);
+  });
+
+  it("keeps codex user and agent messages distinguishable in activity lines", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-roles",
+      tool: "codex",
+      status: "running",
+      task: "请继续优化 UI",
+      timestamp: 1,
+      meta: {
+        codex_event_type: "user_message",
+      },
+    });
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-roles",
+      tool: "codex",
+      status: "completed",
+      task: "我先把消息和工具块拆开。",
+      timestamp: 2,
+      meta: {
+        codex_event_type: "task_complete",
+      },
+    });
+
+    expect(store.getSessions()[0].activityItems).toEqual([
+      expect.objectContaining({
+        kind: "message",
+        source: "assistant",
+        body: "我先把消息和工具块拆开。",
+      }),
+      expect.objectContaining({
+        kind: "message",
+        source: "user",
+        body: "请继续优化 UI",
+      }),
     ]);
   });
 
@@ -199,7 +257,12 @@ describe("createSessionStore", () => {
       pendingAction: null,
     });
 
-    expect(store.getSessions()[0].activities).toEqual(["Unsupported Cursor action: text_input"]);
+    expect(store.getSessions()[0].activityItems).toEqual([
+      expect.objectContaining({
+        kind: "system",
+        body: "Unsupported Cursor action: text_input",
+      }),
+    ]);
   });
 
   it("does not persist sessions when status is not a known enum value", () => {

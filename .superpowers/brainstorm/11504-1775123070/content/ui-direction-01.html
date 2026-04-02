@@ -1,0 +1,119 @@
+<h2>CodePal UI Direction</h2>
+<p class="subtitle">三种都基于“冷静专业”，差别在于品牌感和信息压缩方式。优先看扫读效率、来源区分、抽屉与展开的节奏。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">A. Control Deck</div>
+        <div class="mockup-body" style="background:#0d1118;padding:14px;border-radius:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div>
+              <div style="font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:#7a879e;">CodePal</div>
+              <div style="font-size:22px;font-weight:700;color:#eef4ff;">Agent Monitor</div>
+            </div>
+            <div style="padding:8px 12px;border:1px solid rgba(112,163,255,.35);border-radius:999px;color:#b9d1ff;">Settings</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <div style="padding:6px 10px;border-radius:999px;background:rgba(33,197,110,.14);color:#63e6a4;">Run 3</div>
+            <div style="padding:6px 10px;border-radius:999px;background:rgba(245,158,11,.16);color:#ffc268;">Wait 2</div>
+            <div style="padding:6px 10px;border-radius:999px;background:rgba(244,63,94,.16);color:#ff8ba0;">Err 1</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div style="border:1px solid rgba(110,135,172,.25);background:linear-gradient(180deg,#151c27,#10161f);border-radius:16px;padding:12px;">
+              <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">
+                <div style="width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#3fe0c2,#137f83);"></div>
+                <div style="font-size:15px;font-weight:700;color:#eef4ff;">Codex · Repository Audit</div>
+                <div style="margin-left:auto;padding:4px 8px;border-radius:999px;background:rgba(33,197,110,.12);font-size:11px;color:#63e6a4;">RUNNING</div>
+              </div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:#90a0bb;">
+                <span>scan renderer layout</span><span>04-02 17:10</span><span>12m</span><span>#8af3</span>
+              </div>
+            </div>
+            <div style="border:1px solid rgba(110,135,172,.16);background:#10161f;border-radius:16px;padding:12px;">
+              <div style="display:flex;gap:10px;align-items:center;">
+                <div style="width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#7ab8ff,#3258ff);"></div>
+                <div style="font-size:15px;font-weight:700;color:#eef4ff;">Cursor · Approval Pending</div>
+                <div style="margin-left:auto;padding:4px 8px;border-radius:999px;background:rgba(245,158,11,.12);font-size:11px;color:#ffc268;">WAITING</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Control Deck</h3>
+      <p>最稳妥。像桌面监控台，层级清楚，状态和工具来源分工明确。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">B. Signal Rail</div>
+        <div class="mockup-body" style="background:#0d1118;padding:14px;border-radius:16px;">
+          <div style="display:grid;grid-template-columns:86px 1fr;gap:12px;">
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="padding:10px 8px;border-radius:16px;background:#141b26;border:1px solid rgba(255,255,255,.06);text-align:center;color:#8fa0b9;">Run<div style="font-size:20px;color:#ecf4ff;">3</div></div>
+              <div style="padding:10px 8px;border-radius:16px;background:#141b26;border:1px solid rgba(255,255,255,.06);text-align:center;color:#8fa0b9;">Wait<div style="font-size:20px;color:#ecf4ff;">2</div></div>
+              <div style="padding:10px 8px;border-radius:16px;background:#141b26;border:1px solid rgba(255,255,255,.06);text-align:center;color:#8fa0b9;">Err<div style="font-size:20px;color:#ecf4ff;">1</div></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+              <div style="border-left:3px solid #3fe0c2;background:#111722;border-radius:14px;padding:12px 14px;">
+                <div style="font-size:11px;letter-spacing:.14em;color:#7d8ba2;text-transform:uppercase;">Codex</div>
+                <div style="font-size:16px;font-weight:700;color:#eef4ff;">Repository Audit</div>
+                <div style="font-size:12px;color:#95a5be;">Active detail region opens inline as a rail panel</div>
+              </div>
+              <div style="border-left:3px solid #6da4ff;background:#111722;border-radius:14px;padding:12px 14px;">
+                <div style="font-size:11px;letter-spacing:.14em;color:#7d8ba2;text-transform:uppercase;">Cursor</div>
+                <div style="font-size:16px;font-weight:700;color:#eef4ff;">Approval Pending</div>
+                <div style="font-size:12px;color:#95a5be;">More editorial, stronger lane feeling</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Signal Rail</h3>
+      <p>更有设计感，像“信号轨道”。品牌区分更明显，但布局更主观。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mockup">
+        <div class="mockup-header">C. Quiet Ledger</div>
+        <div class="mockup-body" style="background:#f2f3ee;padding:14px;border-radius:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-size:22px;font-weight:700;color:#1b2430;">CodePal</div>
+            <div style="font-size:12px;color:#657084;">Focus Mode</div>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <div style="padding:6px 10px;border-radius:999px;background:#deefe6;color:#216b49;">Run 3</div>
+            <div style="padding:6px 10px;border-radius:999px;background:#f5ead6;color:#8b5c19;">Wait 2</div>
+            <div style="padding:6px 10px;border-radius:999px;background:#f6dce2;color:#9c3148;">Err 1</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div style="background:white;border:1px solid #dce1e8;border-radius:14px;padding:12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:28px;height:28px;border-radius:50%;background:#3dcfb6;"></div>
+                <div style="font-size:15px;font-weight:700;color:#1d2630;">Codex · Repository Audit</div>
+              </div>
+            </div>
+            <div style="background:white;border:1px solid #dce1e8;border-radius:14px;padding:12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:28px;height:28px;border-radius:50%;background:#5f93ff;"></div>
+                <div style="font-size:15px;font-weight:700;color:#1d2630;">Cursor · Approval Pending</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Quiet Ledger</h3>
+      <p>浅色、极简、非常干净。阅读舒服，但悬浮面板的“监控感”会弱一点。</p>
+    </div>
+  </div>
+</div>

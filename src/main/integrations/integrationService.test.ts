@@ -63,6 +63,13 @@ describe("createIntegrationService", () => {
           healthLabel: "未配置",
         }),
         expect.objectContaining({
+          id: "codex",
+          configExists: false,
+          hookInstalled: false,
+          health: "not_configured",
+          healthLabel: "未配置",
+        }),
+        expect.objectContaining({
           id: "codebuddy",
           configExists: false,
           hookInstalled: false,
@@ -93,21 +100,35 @@ describe("createIntegrationService", () => {
     expect(first.changed).toBe(true);
     expect(first.hookInstalled).toBe(true);
     expect(second.changed).toBe(false);
-    expect(JSON.parse(text)).toMatchObject({
+    const parsed = JSON.parse(text) as {
+      version: number;
+      hooks: Record<string, Array<{ command: string }>>;
+    };
+
+    expect(parsed).toMatchObject({
       version: 1,
-      hooks: {
-        sessionStart: [
-          {
-            command: `"${execPath}" "${appPath}" --codepal-hook cursor-lifecycle sessionStart`,
-          },
-        ],
-        stop: [
-          {
-            command: `"${execPath}" "${appPath}" --codepal-hook cursor-lifecycle stop`,
-          },
-        ],
-      },
     });
+    for (const eventName of [
+      "sessionStart",
+      "stop",
+      "beforeSubmitPrompt",
+      "afterAgentResponse",
+      "afterAgentThought",
+      "beforeReadFile",
+      "afterFileEdit",
+      "beforeMCPExecution",
+      "afterMCPExecution",
+      "beforeShellExecution",
+      "afterShellExecution",
+    ]) {
+      expect(parsed.hooks[eventName]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            command: `"${execPath}" "${appPath}" --codepal-hook cursor`,
+          }),
+        ]),
+      );
+    }
   });
 
   it("installs codebuddy hooks without clobbering existing settings", () => {
@@ -174,6 +195,7 @@ describe("createIntegrationService", () => {
     });
 
     service.recordEvent("codebuddy", "waiting", 1234);
+    service.recordEvent("codex", "running", 5678);
 
     const diagnostics = service.getDiagnostics();
     expect(diagnostics.runtime.packaged).toBe(true);
@@ -182,6 +204,36 @@ describe("createIntegrationService", () => {
     expect(codebuddy).toMatchObject({
       lastEventAt: 1234,
       lastEventStatus: "waiting",
+    });
+    const codex = diagnostics.agents.find((agent) => agent.id === "codex");
+    expect(codex).toMatchObject({
+      lastEventAt: 5678,
+      lastEventStatus: "running",
+    });
+  });
+
+  it("reports active Codex diagnostics when session logs exist", () => {
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
+    const codexSessionsRoot = join(homeDir, ".codex", "sessions");
+    mkdirSync(codexSessionsRoot, { recursive: true });
+
+    const service = createIntegrationService({
+      homeDir,
+      hookScriptsRoot,
+      packaged: false,
+      execPath,
+      appPath,
+    });
+
+    const codex = service.getDiagnostics().agents.find((agent) => agent.id === "codex");
+    expect(codex).toMatchObject({
+      id: "codex",
+      health: "active",
+      healthLabel: "正常",
+      actionLabel: "自动接入",
+      hookInstalled: true,
+      statusMessage: "自动读取 Codex session 日志",
+      configPath: codexSessionsRoot,
     });
   });
 

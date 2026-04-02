@@ -3,8 +3,18 @@
  * Task 5：status_change 可携带 pendingAction（审批 / 结构化选项）。
  */
 
-import type { PendingAction, PendingClosed, ResponseTarget } from "../../shared/sessionTypes";
-import { isPendingAction, isPendingClosed, isResponseTarget } from "../../shared/sessionTypes";
+import type {
+  ActivityItem,
+  PendingAction,
+  PendingClosed,
+  ResponseTarget,
+} from "../../shared/sessionTypes";
+import {
+  isActivityItem,
+  isPendingAction,
+  isPendingClosed,
+  isResponseTarget,
+} from "../../shared/sessionTypes";
 
 export type UpstreamEventType = "status_change";
 
@@ -22,6 +32,8 @@ export interface StatusChangeUpstreamEvent {
   timestamp: number;
   /** 可选：cwd、model 等未建模字段，供后续 UI 使用 */
   meta?: Record<string, unknown>;
+  /** 可选：统一活动模型，优先于后置字符串推断 */
+  activityItems?: ActivityItem[];
   /** 待处理动作；null 表示清除 */
   pendingAction?: PendingAction | null;
   /** 可选：action_response 回写目标 */
@@ -48,6 +60,11 @@ export function isStatusChangeUpstreamEvent(
   }
   if ("pendingAction" in o) {
     if (o.pendingAction !== null && !isPendingAction(o.pendingAction)) return false;
+  }
+  if ("activityItems" in o && o.activityItems !== undefined) {
+    if (!Array.isArray(o.activityItems) || !o.activityItems.every((item) => isActivityItem(item))) {
+      return false;
+    }
   }
   if ("responseTarget" in o && o.responseTarget !== undefined) {
     if (!isResponseTarget(o.responseTarget)) return false;

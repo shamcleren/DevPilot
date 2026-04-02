@@ -1,4 +1,4 @@
-import { BrowserWindow, Tray, app, ipcMain } from "electron";
+import { BrowserWindow, Tray, app, ipcMain, shell } from "electron";
 import fs from "node:fs";
 import { createActionResponseTransport } from "./actionResponse/createActionResponseTransport";
 import { dispatchActionResponse } from "./actionResponse/dispatchActionResponse";
@@ -77,6 +77,16 @@ function wireActionResponseIpc(
       throw new Error("unsupported integration agent");
     }
     return integrationService.installHooks(agentId);
+  });
+  ipcMain.handle("codepal:open-path", async (_event, payload: unknown) => {
+    const pathToOpen =
+      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).path === "string"
+        ? (payload as Record<string, unknown>).path.trim()
+        : "";
+    if (!pathToOpen) {
+      throw new Error("path is required");
+    }
+    return shell.openPath(pathToOpen);
   });
   ipcMain.on("codepal:action-response", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object") return;

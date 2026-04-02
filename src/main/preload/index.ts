@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld("codepal", {
       ipcRenderer.removeListener(channel, listener);
     };
   },
+  openPath(path: string) {
+    return ipcRenderer.invoke("codepal:open-path", { path }) as Promise<string>;
+  },
   respondToPendingAction(sessionId: string, actionId: string, option: string) {
     ipcRenderer.send("codepal:action-response", { sessionId, actionId, option });
   },

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendEventLine = vi.hoisted(() => vi.fn<[], Promise<void>>());
 const runBlockingHookFromRaw = vi.hoisted(() => vi.fn<[], Promise<string | undefined>>());
+const runCursorHookPipeline = vi.hoisted(() => vi.fn<[], Promise<string | undefined>>());
 
 vi.mock("./sendEventBridge", () => ({
   sendEventLine,
@@ -10,6 +11,10 @@ vi.mock("./sendEventBridge", () => ({
 
 vi.mock("./blockingHookBridge", () => ({
   runBlockingHookFromRaw,
+}));
+
+vi.mock("./cursorHook", () => ({
+  runCursorHookPipeline,
 }));
 
 import { HOOK_CLI_NOT_HOOK_MODE, runHookCli } from "./runHookCli";
@@ -48,6 +53,7 @@ describe("runHookCli", () => {
     vi.clearAllMocks();
     sendEventLine.mockResolvedValue(undefined);
     runBlockingHookFromRaw.mockResolvedValue(undefined);
+    runCursorHookPipeline.mockResolvedValue(undefined);
   });
 
   it("returns HOOK_CLI_NOT_HOOK_MODE when argv has no --codepal-hook", async () => {
@@ -111,6 +117,50 @@ describe("runHookCli", () => {
       {},
     );
     expect(code).toBe(1);
+  });
+
+  it("cursor forwards raw payload into cursor hook pipeline", async () => {
+    const stdout = createMockWritable();
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "cursor"),
+      stdinFromString(JSON.stringify({ session_id: "s1", hook_event_name: "SessionStart" })),
+      stdout.stream,
+      createMockWritable().stream,
+      { CURSOR_PROJECT_DIR: "/proj" },
+    );
+    expect(code).toBe(0);
+    expect(runCursorHookPipeline).toHaveBeenCalledWith(
+      JSON.stringify({ session_id: "s1", hook_event_name: "SessionStart" }),
+      { CURSOR_PROJECT_DIR: "/proj" },
+    );
+    expect(stdout.text()).toBe("");
+  });
+
+  it("cursor writes blocking response line to stdout when present", async () => {
+    runCursorHookPipeline.mockResolvedValue('{"ok":true}');
+    const stdout = createMockWritable();
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "cursor"),
+      stdinFromString(JSON.stringify({ session_id: "s1", hook_event_name: "Notification" })),
+      stdout.stream,
+      createMockWritable().stream,
+      {},
+    );
+    expect(code).toBe(0);
+    expect(stdout.text()).toBe('{"ok":true}\n');
+  });
+
+  it("cursor fails on empty stdin", async () => {
+    const stderr = createMockWritable();
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "cursor"),
+      stdinFromString(" "),
+      createMockWritable().stream,
+      stderr.stream,
+      {},
+    );
+    expect(code).toBe(1);
+    expect(runCursorHookPipeline).not.toHaveBeenCalled();
   });
 
   it("cursor-lifecycle sessionStart sends StatusChange running via sendEventLine", async () => {

@@ -13,7 +13,11 @@ function baseRow(overrides: Partial<MonitorSessionRow> = {}): MonitorSessionRow 
     shortId: "s1",
     updatedLabel: "04-02 16:00",
     durationLabel: "0s",
-    activities: [],
+    pendingCount: 0,
+    loading: false,
+    collapsedSummary: "waiting for approval",
+    timelineItems: [],
+    activityItems: [],
     hoverSummary: "waiting",
     ...overrides,
   };
@@ -40,6 +44,7 @@ describe("SessionRow pending action", () => {
       />,
     );
     expect(html).toContain("Proceed?");
+    expect(html).toContain("Awaiting decision");
     expect(html).toContain(">Yes<");
     expect(html).toContain(">No<");
   });
@@ -83,6 +88,7 @@ describe("SessionRow pending action", () => {
       <SessionRow session={baseRow()} expanded={false} onToggleExpanded={vi.fn()} onRespond={vi.fn()} />,
     );
     expect(html).not.toContain("pending-action__title");
+    expect(html).not.toContain("session-row__interaction");
   });
 
   it("omits pending action UI when pendingActions is empty", () => {
@@ -95,15 +101,34 @@ describe("SessionRow pending action", () => {
       />,
     );
     expect(html).not.toContain("pending-action__title");
+    expect(html).not.toContain("session-row__interaction");
   });
 
   it("renders latest and recent activity sections in the expanded details panel", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
-          activities: [
-            "Tool call: Bash",
-            "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "tool",
+              source: "tool",
+              label: "Bash",
+              title: "Bash",
+              body: "Tool call: Bash",
+              timestamp: 1,
+              toolName: "Bash",
+              toolPhase: "call",
+            },
+            {
+              id: "2",
+              kind: "note",
+              source: "system",
+              label: "System",
+              title: "System",
+              body: "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
+              timestamp: 2,
+            },
           ],
           hoverSummary: "scan repo",
         })}
@@ -113,21 +138,24 @@ describe("SessionRow pending action", () => {
       />,
     );
 
-    expect(html).toContain("Latest");
-    expect(html).toContain("Recent");
+    expect(html).toContain("session-stream");
+    expect(html).not.toContain("session-row__interaction");
+    expect(html).toContain("session-stream__artifact-eyebrow");
     expect(html).toContain("Tool call: Bash");
     expect(html).toContain(
       "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
     );
   });
 
-  it("renders title and secondary meta separately", () => {
+  it("renders the control-deck collapsed summary line", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
           titleLabel: "Codex · review diff",
           tool: "codex",
-          task: "scan files",
+          collapsedSummary: "最后需要你确认是否继续合并？",
+          pendingCount: 2,
+          durationLabel: "14m",
           shortId: "9af3",
           updatedLabel: "04-02 16:01",
         })}
@@ -138,15 +166,62 @@ describe("SessionRow pending action", () => {
     );
 
     expect(html).toContain("Codex · review diff");
-    expect(html).toContain("scan files");
+    expect(html).toContain("最后需要你确认是否继续合并？");
+    expect(html).toContain("2 pending");
     expect(html).toContain("9af3");
     expect(html).toContain("04-02 16:01");
+    expect(html).toContain("14m");
+  });
+
+  it("omits the collapsed summary line when it duplicates the title text", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          titleLabel: "这轮已经把 expanded 区从旧的 `event-first` 改成了 `message-first`。",
+          collapsedSummary: "Completed: 这轮已经把 expanded 区从旧的 `event-first` 改成了 `message-first`。",
+        })}
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain("session-row__summary-text");
+  });
+
+  it("does not duplicate tool name inside the title line", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          tool: "codex",
+          titleLabel: "已经重新拉起来了。",
+        })}
+        expanded={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain(">Codex<");
+    expect(html).toContain("已经重新拉起来了。");
+    expect(html).not.toContain("Codex</span><span class=\"session-row__title\">Codex");
   });
 
   it("renders pending actions inside the expanded details container", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Agent",
+              title: "Agent",
+              body: "Proceed when ready.",
+              timestamp: 1,
+            },
+          ],
           pendingActions: [
             {
               id: "a1",
@@ -164,6 +239,254 @@ describe("SessionRow pending action", () => {
 
     expect(html).toContain("session-row__details");
     expect(html).toContain("Proceed?");
+  });
+
+  it("renders inline code and markdown-style file links inside assistant messages", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body:
+                "改动在 [`src/adapters/codex/normalizeCodexLogEvent.ts`](/Users/demo/codepal/src/adapters/codex/normalizeCodexLogEvent.ts)，并保留 `activityItems.body` 全文。",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__code");
+    expect(html).toContain("session-stream__file-link");
+    expect(html).toContain("src/adapters/codex/normalizeCodexLogEvent.ts");
+    expect(html).toContain("activityItems.body");
+  });
+
+  it("shows a typing indicator inline while a running session already has visible content", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "running",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body: "我先看一下当前实现。",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__section--footer");
+    expect(html).toContain("session-stream__typing-indicator");
+    expect(html).toContain("session-stream__typing-dots");
+    expect(html).toContain("正在整理回复");
+  });
+
+  it("renders user and agent messages with distinct role classes", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "user",
+              label: "User",
+              title: "User",
+              body: "请继续优化 UI",
+              timestamp: 1,
+            },
+            {
+              id: "2",
+              kind: "message",
+              source: "assistant",
+              label: "Agent",
+              title: "Agent",
+              body: "我先把消息和工具块拆开。",
+              timestamp: 2,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__item--message-user");
+    expect(html).toContain("session-stream__item--message-agent");
+  });
+
+  it("renders a full-context panel with overview, timeline, and interaction slot", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "running",
+          collapsedSummary: "最后需要你确认是否继续合并？",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Agent",
+              title: "Agent",
+              body: "最后需要你确认是否继续合并？",
+              timestamp: 1,
+            },
+            {
+              id: "2",
+              kind: "tool",
+              source: "tool",
+              label: "Bash",
+              title: "Bash",
+              body: "git diff --stat",
+              timestamp: 2,
+              toolName: "Bash",
+              toolPhase: "call",
+            },
+            {
+              id: "3",
+              kind: "note",
+              source: "system",
+              label: "System",
+              title: "System",
+              body: "Closed action a1 (consumed_local)",
+              timestamp: 3,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream");
+    expect(html).not.toContain("session-row__interaction");
+    expect(html).toContain("session-row__overview-artifact");
+    expect(html).toContain("session-stream__item--artifact-active");
+    expect(html).toContain("session-stream__artifact-eyebrow");
+  });
+
+  it("omits a single low-information terminal note when top-level status already covers it", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "completed",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body: "内容已经整理好了。",
+              timestamp: 1,
+            },
+            {
+              id: "2",
+              kind: "note",
+              source: "system",
+              label: "Completed",
+              title: "Completed",
+              body: "Completed",
+              timestamp: 2,
+              tone: "completed",
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain("session-stream__status-rail");
+    expect(html).not.toContain("session-stream__section--notes");
+    expect(html).not.toContain(">Completed<");
+  });
+
+  it("omits low-signal file edit system events from the expanded timeline", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          tool: "cursor",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body: "我已经改好了。",
+              timestamp: 1,
+            },
+            {
+              id: "2",
+              kind: "system",
+              source: "system",
+              label: "File Edit",
+              title: "File Edit",
+              body: "File edited",
+              timestamp: 2,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain("File edited");
+    expect(html).not.toContain("session-stream__section--notes");
+  });
+
+  it("does not repeat collapsed title or summary inside the expanded overview", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          titleLabel: "这两个问题已经收掉了。",
+          collapsedSummary: "最后需要你确认是否继续合并？",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "message",
+              source: "assistant",
+              label: "Agent",
+              title: "Agent",
+              body: "最后需要你确认是否继续合并？",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain("session-row__overview-summary");
+    expect(html).not.toContain("session-row__overview-title");
+    expect(html).not.toContain("session-row__overview-rail");
+    expect(html).not.toContain("session-row__overview-artifact");
   });
 
   it("renders tool-specific marker classes for codex and cursor", () => {
@@ -186,5 +509,40 @@ describe("SessionRow pending action", () => {
 
     expect(codexHtml).toContain("tool-icon--codex");
     expect(cursorHtml).toContain("tool-icon--cursor");
+  });
+
+  it("renders a loading panel while running with no renderable primary content", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          tool: "codex",
+          status: "running",
+          loading: false,
+          collapsedSummary: "正在读取…",
+          timelineItems: [
+            {
+              id: "1",
+              kind: "note",
+              source: "system",
+              label: "Running",
+              title: "Running",
+              body: "Working",
+              timestamp: 1,
+              tone: "running",
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-row__loading");
+    expect(html).toContain("session-row__loading-bubble");
+    expect(html).toContain("session-row__loading-label");
+    expect(html).toContain("session-row__loading-dots");
+    expect(html).toContain("正在整理回复");
+    expect(html).not.toContain("Working");
   });
 });

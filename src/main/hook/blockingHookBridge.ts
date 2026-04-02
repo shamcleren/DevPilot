@@ -1,6 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import net from "node:net";
-import os from "node:os";
 import path from "node:path";
 import { isPendingAction } from "../../shared/sessionTypes";
 import { sendEventLine } from "./sendEventBridge";
@@ -37,7 +36,7 @@ function toError(error: unknown, fallbackMessage: string): Error {
 }
 
 export async function createBlockingHookCollector(waitMs: number): Promise<Collector> {
-  const socketDir = await mkdtemp(path.join(os.tmpdir(), "codepal-hook-response-"));
+  const socketDir = await mkdtemp(path.join("/tmp", "codepal-hook-response-"));
   const socketPath = path.join(socketDir, "collector.sock");
   const server = net.createServer();
 

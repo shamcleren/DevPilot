@@ -33,6 +33,22 @@ const diagnostics: IntegrationDiagnostics = {
       statusMessage: "未配置 CodePal Cursor hooks",
     },
     {
+      id: "codex",
+      label: "Codex",
+      supported: false,
+      configPath: "/Users/demo/.codex/sessions",
+      configExists: true,
+      hookScriptPath: "/Users/demo/.codex/sessions",
+      hookScriptExists: true,
+      hookInstalled: true,
+      health: "active",
+      healthLabel: "正常",
+      actionLabel: "自动接入",
+      statusMessage: "自动读取 Codex session 日志",
+      lastEventAt: Date.parse("2026-03-31T11:00:00.000Z"),
+      lastEventStatus: "running",
+    },
+    {
       id: "codebuddy",
       label: "CodeBuddy",
       supported: true,
@@ -92,21 +108,23 @@ describe("IntegrationPanel", () => {
       />,
     );
 
-    expect(html).toContain("CodePal Hook 命令");
-    expect(html).toContain("管理本应用写入各编辑器的 hook 命令与迁移状态");
+    expect(html).toContain("接入与诊断");
+    expect(html).toContain("这里只放低频接入和修复");
     expect(html).toContain("监听中：TCP 127.0.0.1:17371");
     expect(html).toContain("开发模式 · Electron.bin");
-    expect(html).toContain("/tmp/Electron.bin");
     expect(html).not.toContain("node:");
     expect(html).not.toContain("python3:");
-    expect(html).toContain("/Users/demo/.cursor/hooks.json");
+    expect(html).toContain("…/.codex/sessions");
+    expect(html).toContain("…/.cursor/hooks.json");
     expect(html).toContain("未配置");
     expect(html).toContain("正常");
     expect(html).toContain("未配置 CodePal Cursor hooks");
-    expect(html).toContain("最近事件：running @ 2026-03-31T12:00:00.000Z");
+    expect(html).toContain("最近事件：running · 03/31");
+    expect(html).toContain("自动读取 Codex session 日志");
     expect(html).toContain("配置已更新");
     expect(html).toContain(">启用<");
-    expect(html).toContain(">修复<");
+    expect(html).not.toContain(">修复<");
+    expect(html).not.toContain(">自动接入<");
   });
 
   it("shows legacy_path as 待迁移 with 迁移 action", () => {

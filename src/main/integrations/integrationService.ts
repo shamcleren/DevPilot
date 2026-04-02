@@ -10,7 +10,7 @@ import type {
 } from "../../shared/integrationTypes";
 import {
   buildCodeBuddyHookCommand,
-  buildCursorLifecycleHookCommand,
+  buildCursorHookCommand,
   detectLegacyHookCommand,
   type HookCommandContext,
 } from "../hook/commandBuilder";
@@ -31,6 +31,7 @@ type LastEvent = {
 };
 
 const AGENT_LABELS: Record<IntegrationAgentId, string> = {
+  codex: "Codex",
   cursor: "Cursor",
   codebuddy: "CodeBuddy",
 };
@@ -126,6 +127,20 @@ function buildCodeBuddyCommand(hookScriptPath: string): string {
   return `"${hookScriptPath}"`;
 }
 
+const CURSOR_HOOK_EVENT_NAMES = [
+  "sessionStart",
+  "stop",
+  "beforeSubmitPrompt",
+  "afterAgentResponse",
+  "afterAgentThought",
+  "beforeReadFile",
+  "afterFileEdit",
+  "beforeMCPExecution",
+  "afterMCPExecution",
+  "beforeShellExecution",
+  "afterShellExecution",
+] as const;
+
 function cursorConfigPath(homeDir: string): string {
   return path.join(homeDir, ".cursor", "hooks.json");
 }
@@ -142,6 +157,36 @@ function codeBuddyHookScriptPath(hookScriptsRoot: string): string {
   return path.join(hookScriptsRoot, "codebuddy-hook.sh");
 }
 
+function codexSessionsPath(homeDir: string): string {
+  return path.join(homeDir, ".codex", "sessions");
+}
+
+function inspectCodexConfig(
+  homeDir: string,
+  lastEvent?: LastEvent,
+): IntegrationAgentDiagnostics {
+  const configPath = codexSessionsPath(homeDir);
+  const configExists = fs.existsSync(configPath);
+  const health: IntegrationHealth = configExists ? "active" : "not_configured";
+  const { healthLabel } = labelsForHealth(health);
+
+  return {
+    id: "codex",
+    label: AGENT_LABELS.codex,
+    supported: false,
+    configPath,
+    configExists,
+    hookScriptPath: configPath,
+    hookScriptExists: configExists,
+    hookInstalled: configExists,
+    health,
+    healthLabel,
+    actionLabel: "自动接入",
+    statusMessage: configExists ? "自动读取 Codex session 日志" : "未找到 Codex session 日志目录",
+    ...(lastEvent ? { lastEventAt: lastEvent.at, lastEventStatus: lastEvent.status } : {}),
+  };
+}
+
 function inspectCursorConfig(
   homeDir: string,
   hookScriptsRoot: string,
@@ -152,15 +197,15 @@ function inspectCursorConfig(
   const hookScriptPath = cursorHookScriptPath(hookScriptsRoot);
   const hookScriptExists = fs.existsSync(hookScriptPath);
   const config = readOptionalJson(configPath);
-  const requiredNew = {
-    sessionStart: buildCursorLifecycleHookCommand("sessionStart", hookCtx),
-    stop: buildCursorLifecycleHookCommand("stop", hookCtx),
-  };
+  const requiredNew = Object.fromEntries(
+    CURSOR_HOOK_EVENT_NAMES.map((eventName) => [eventName, buildCursorHookCommand(hookCtx)]),
+  ) as Record<string, string>;
   const requiredLegacy = {
     sessionStart: buildCursorCommand(hookScriptPath, "sessionStart"),
     stop: buildCursorCommand(hookScriptPath, "stop"),
   };
   const eventNames = Object.keys(requiredNew);
+  const legacyEventNames = Object.keys(requiredLegacy);
 
   let health: IntegrationHealth = "not_configured";
   let hookInstalled = false;
@@ -179,7 +224,7 @@ function inspectCursorConfig(
       const hasNew = cursorHooksMatch(hooks, requiredNew);
       const hasLegacyExact = cursorHooksMatch(hooks, requiredLegacy);
       const hasLegacyDetect =
-        eventNames.every((eventName) => {
+        legacyEventNames.every((eventName) => {
           const eventEntries = hooks[eventName];
           if (!Array.isArray(eventEntries)) return false;
           return eventEntries.some(
@@ -420,10 +465,9 @@ function installCursorHooksFile(
   }
   const hooks = hooksValue ? ({ ...hooksValue } as Record<string, unknown>) : {};
 
-  const requiredCommands = {
-    sessionStart: buildCursorLifecycleHookCommand("sessionStart", hookCtx),
-    stop: buildCursorLifecycleHookCommand("stop", hookCtx),
-  };
+  const requiredCommands = Object.fromEntries(
+    CURSOR_HOOK_EVENT_NAMES.map((eventName) => [eventName, buildCursorHookCommand(hookCtx)]),
+  ) as Record<string, string>;
 
   let changed = current.exists === false;
 
@@ -536,6 +580,9 @@ export function createIntegrationService(options: IntegrationServiceOptions) {
 
   function getAgentDiagnostics(agentId: IntegrationAgentId): IntegrationAgentDiagnostics {
     const hookCtx = integrationHookContext();
+    if (agentId === "codex") {
+      return inspectCodexConfig(options.homeDir, lastEvents.get(agentId));
+    }
     if (agentId === "cursor") {
       return inspectCursorConfig(
         options.homeDir,
@@ -557,7 +604,7 @@ export function createIntegrationService(options: IntegrationServiceOptions) {
       listener = next;
     },
     recordEvent(tool: string, status: SessionStatus, timestamp: number) {
-      if (tool === "cursor" || tool === "codebuddy") {
+      if (tool === "cursor" || tool === "codebuddy" || tool === "codex") {
         lastEvents.set(tool, { at: timestamp, status });
       }
     },
@@ -570,10 +617,26 @@ export function createIntegrationService(options: IntegrationServiceOptions) {
           executablePath: options.execPath,
           executableLabel: formatExecutableLabel(options.packaged, options.execPath),
         },
-        agents: [getAgentDiagnostics("cursor"), getAgentDiagnostics("codebuddy")],
+        agents: [
+          getAgentDiagnostics("codex"),
+          getAgentDiagnostics("cursor"),
+          getAgentDiagnostics("codebuddy"),
+        ],
       };
     },
     installHooks(agentId: IntegrationAgentId): IntegrationInstallResult {
+      if (agentId === "codex") {
+        const diagnostics = getAgentDiagnostics(agentId);
+        return {
+          agentId,
+          configPath: diagnostics.configPath,
+          changed: false,
+          hookInstalled: diagnostics.hookInstalled,
+          health: diagnostics.health,
+          message: diagnostics.statusMessage,
+          diagnostics,
+        };
+      }
       const hookCtx = integrationHookContext();
       const result =
         agentId === "cursor"

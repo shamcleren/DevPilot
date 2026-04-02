@@ -1,6 +1,6 @@
 import type { SessionStatus } from "./sessionTypes";
 
-export type IntegrationAgentId = "cursor" | "codebuddy";
+export type IntegrationAgentId = "cursor" | "codebuddy" | "codex";
 
 export type IntegrationHealth =
   | "active"

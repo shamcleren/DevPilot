@@ -41,6 +41,105 @@ describe("lineToSessionEvent", () => {
     expect(ev?.status).toBe("waiting");
   });
 
+  it("drops low-signal raw Cursor SessionStart payloads that only announce agent mode", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        tool: "cursor",
+        source: "cursor",
+        hook_event_name: "SessionStart",
+        session_id: "cursor-start-1",
+        composer_mode: "agent",
+      }),
+    );
+    expect(ev).toBeNull();
+  });
+
+  it("degrades unsupported raw Cursor interactive payloads into visible events", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        tool: "cursor",
+        source: "cursor",
+        hook_event_name: "Notification",
+        session_id: "cursor-unsupported-1",
+        pendingAction: {
+          id: "text-1",
+          type: "text_input",
+          title: "Explain why",
+          options: [],
+        },
+      }),
+    );
+    expect(ev).toMatchObject({
+      sessionId: "cursor-unsupported-1",
+      tool: "cursor",
+      status: "waiting",
+      task: "Unsupported Cursor action: text_input",
+      pendingAction: null,
+      meta: {
+        hook_event_name: "Notification",
+        unsupported_action_type: "text_input",
+      },
+    });
+  });
+
+  it("normalizes raw Cursor payloads that use conversation_id as the session key", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        tool: "cursor",
+        source: "cursor",
+        hook_event_name: "beforeSubmitPrompt",
+        conversation_id: "cursor-conv-1",
+        text: "ship it",
+      }),
+    );
+    expect(ev).toMatchObject({
+      sessionId: "cursor-conv-1",
+      tool: "cursor",
+      status: "running",
+      task: "ship it",
+    });
+  });
+
+  it("keeps richer Cursor assistant/tool activity items through ingress", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        tool: "cursor",
+        source: "cursor",
+        hook_event_name: "beforeShellExecution",
+        session_id: "cursor-shell-1",
+        tool_name: "Bash",
+        command: "npm test -- --runInBand",
+      }),
+    );
+    expect(ev).toMatchObject({
+      sessionId: "cursor-shell-1",
+      tool: "cursor",
+      status: "running",
+      activityItems: [
+        {
+          kind: "tool",
+          source: "tool",
+          title: "Bash",
+          toolPhase: "call",
+          body: "npm test -- --runInBand",
+        },
+      ],
+    });
+  });
+
+  it("drops raw Cursor afterAgentThought payloads so internal reasoning stays hidden", () => {
+    const ev = lineToSessionEvent(
+      JSON.stringify({
+        tool: "cursor",
+        source: "cursor",
+        hook_event_name: "afterAgentThought",
+        session_id: "cursor-thought-1",
+        text: "**Explaining JSON completion** I think I need to clarify...",
+      }),
+    );
+    expect(ev).toBeNull();
+  });
+
   it("normalizes CodeBuddy payload with source tag", () => {
     const ev = lineToSessionEvent(
       JSON.stringify({

@@ -1,4 +1,8 @@
-import type { SessionRecord } from "../shared/sessionTypes";
+import type { ActivityItem, SessionRecord } from "../shared/sessionTypes";
+
+export type TimelineItem = ActivityItem & {
+  label: string;
+};
 
 /**
  * Renderer row model: same core fields as {@link SessionRecord}, plus mock-only
@@ -9,6 +13,10 @@ export type MonitorSessionRow = SessionRecord & {
   shortId: string;
   updatedLabel: string;
   durationLabel: string;
-  activities: string[];
+  pendingCount: number;
+  loading: boolean;
+  collapsedSummary: string;
+  timelineItems: TimelineItem[];
+  activityItems: ActivityItem[];
   hoverSummary: string;
 };

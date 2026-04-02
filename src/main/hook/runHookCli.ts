@@ -1,6 +1,7 @@
 import { runBlockingHookFromRaw } from "./blockingHookBridge";
 import { buildCursorLifecycleEventLine } from "./cursorLifecycleHook";
 import { runCodeBuddyHookPipeline } from "./codeBuddyHook";
+import { runCursorHookPipeline } from "./cursorHook";
 import { sendEventLine } from "./sendEventBridge";
 
 export const HOOK_CLI_NOT_HOOK_MODE = -1;
@@ -27,7 +28,8 @@ type ParsedArgv =
   | { kind: "none" }
   | { kind: "invalid"; message: string }
   | { kind: "codebuddy" }
-  | { kind: "cursor"; phase: "sessionStart" | "stop" }
+  | { kind: "cursor" }
+  | { kind: "cursor-lifecycle"; phase: "sessionStart" | "stop" }
   | { kind: "send-event" }
   | { kind: "blocking-hook" };
 
@@ -46,6 +48,9 @@ function parseArgv(argv: string[]): ParsedArgv {
   }
   if (subcommand === "codebuddy") {
     return { kind: "codebuddy" };
+  }
+  if (subcommand === "cursor") {
+    return { kind: "cursor" };
   }
   if (subcommand === "send-event") {
     return { kind: "send-event" };
@@ -67,7 +72,7 @@ function parseArgv(argv: string[]): ParsedArgv {
         message: `codepal-hook: unknown cursor-lifecycle phase ${JSON.stringify(phase)}`,
       };
     }
-    return { kind: "cursor", phase };
+    return { kind: "cursor-lifecycle", phase };
   }
 
   return {
@@ -125,6 +130,17 @@ export async function runHookCli(
         throw new Error("codeBuddyHook: empty payload");
       }
       const line = await runCodeBuddyHookPipeline(rawText, env);
+      if (line !== undefined && line !== "") {
+        stdout.write(`${line}\n`);
+      }
+      return 0;
+    }
+
+    if (parsed.kind === "cursor") {
+      if (!rawText) {
+        throw new Error("cursorHook: empty payload");
+      }
+      const line = await runCursorHookPipeline(rawText, env);
       if (line !== undefined && line !== "") {
         stdout.write(`${line}\n`);
       }

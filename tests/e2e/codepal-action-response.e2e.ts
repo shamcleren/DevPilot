@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import { stringifyActionResponsePayload } from "../../src/shared/actionResponsePayload";
 import { startActionResponseCollector } from "./helpers/actionResponseServer";
 import { launchCodePal } from "./helpers/launchCodePal";
@@ -11,6 +13,93 @@ const SESSION_ID = "e2e-golden-session";
 const ACTION_ID = "e2e-golden-action";
 const PENDING_TITLE = "E2E single choice prompt";
 const OPTION_APPROVE = "Approve";
+
+test("cursor phase1: installs cursor hooks and surfaces degraded unsupported actions", async () => {
+  const collector = await startActionResponseCollector();
+  const homeDir = await fs.mkdtemp(path.join("/tmp", "codepal-home-"));
+  const codepal = await launchCodePal({
+    actionResponseSocketPath: collector.socketPath,
+    homeDir,
+  });
+
+  const phase1Session = "cursor-phase1-session";
+  const phase1Action = "cursor-phase1-action";
+  const phase1Title = "Cursor phase1 approval";
+
+  try {
+    const mainPage = await codepal.app.firstWindow();
+    await mainPage.waitForLoadState("domcontentloaded");
+    await mainPage.waitForLoadState("load");
+    await expect(mainPage.getByRole("heading", { name: "CodePal" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const installResult = await mainPage.evaluate(async () => {
+      return window.codepal.installIntegrationHooks("cursor");
+    });
+    expect(installResult.message).toContain("已写入 Cursor 配置");
+
+    const configPath = path.join(homeDir, ".cursor", "hooks.json");
+    const installed = JSON.parse(await fs.readFile(configPath, "utf8")) as {
+      hooks: { sessionStart: Array<{ command: string }>; stop: Array<{ command: string }> };
+    };
+    expect(installed.hooks.sessionStart[0]?.command).toContain("--codepal-hook cursor");
+    expect(installed.hooks.stop[0]?.command).toContain("--codepal-hook cursor");
+
+    await sendStatusChange(
+      {
+        type: "status_change",
+        sessionId: phase1Session,
+        tool: "cursor",
+        status: "waiting",
+        task: "cursor phase1 ready",
+        timestamp: Date.now(),
+        pendingAction: {
+          id: phase1Action,
+          type: "single_choice",
+          title: phase1Title,
+          options: [OPTION_APPROVE, "Reject"],
+        },
+      },
+      codepal.ipcSocketPath,
+    );
+
+    const pending = mainPage.getByLabel(phase1Title);
+    await expect(pending).toBeVisible({ timeout: 15_000 });
+    await pending.getByRole("button", { name: OPTION_APPROVE }).click();
+    await expect(collector.waitForLine()).resolves.toBe(
+      stringifyActionResponsePayload(phase1Session, phase1Action, OPTION_APPROVE),
+    );
+    await expect(pending).toBeHidden();
+
+    await sendStatusChange(
+      {
+        type: "status_change",
+        sessionId: phase1Session,
+        tool: "cursor",
+        status: "waiting",
+        task: "Unsupported Cursor action: text_input",
+        timestamp: Date.now(),
+        meta: {
+          hook_event_name: "Notification",
+          unsupported_action_type: "text_input",
+        },
+        pendingAction: null,
+      },
+      codepal.ipcSocketPath,
+    );
+
+    await expect(
+      mainPage
+        .getByLabel("Cursor WAITING")
+        .getByText("Unsupported Cursor action: text_input"),
+    ).toBeVisible({ timeout: 15_000 });
+  } finally {
+    await codepal.close().catch(() => undefined);
+    await collector.close().catch(() => undefined);
+    await fs.rm(homeDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+});
 
 test("round-trips a single_choice pending action", async () => {
   const collector = await startActionResponseCollector();

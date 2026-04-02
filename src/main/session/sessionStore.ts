@@ -1,5 +1,6 @@
 import { stringifyActionResponsePayload } from "../../shared/actionResponsePayload";
 import {
+  type ActivityItem,
   type PendingAction,
   type PendingCloseReason,
   type PendingClosed,
@@ -13,6 +14,7 @@ import {
 export const DEFAULT_PENDING_LIFECYCLE_TIMEOUT_MS = 25_000;
 export const SESSION_HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const MAX_HISTORY_SESSION_COUNT = 150;
+const MAX_ACTIVITY_ITEMS = 6;
 
 export type SessionEvent = {
   type?: string;
@@ -23,6 +25,7 @@ export type SessionEvent = {
   task?: string;
   timestamp: number;
   meta?: Record<string, unknown>;
+  activityItems?: ActivityItem[];
   /** 未出现则保留原值；null 表示清除 */
   pendingAction?: PendingAction | null;
   /** 与 pendingAction 同条事件可选携带；按 action upsert 时写入该 action 的运行时路由 */
@@ -47,6 +50,7 @@ type InternalSessionRecord = {
   title?: string;
   task?: string;
   updatedAt: number;
+  activityItems: ActivityItem[];
   activities: string[];
   pendingById: Map<string, PendingActionRuntimeState>;
   /** 最近关闭的 action（新 upsert 同 id 时会移除），供控制器去重 */
@@ -58,8 +62,6 @@ export type PendingActionResponsePrep = {
   responseTarget?: ResponseTarget;
 };
 
-const MAX_ACTIVITY_LINES = 6;
-
 function capitalizeStatus(status: SessionStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
@@ -69,45 +71,232 @@ function firstMetaString(meta: Record<string, unknown> | undefined, key: string)
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
-function describeActivity(event: SessionEvent): string[] {
-  const lines: string[] = [];
+function eventTimestamp(event: SessionEvent): number {
+  return event.timestamp;
+}
+
+function createActivityItem(
+  partial: Omit<ActivityItem, "id" | "timestamp"> & { id?: string; timestamp?: number },
+  event: SessionEvent,
+): ActivityItem {
+  return {
+    id:
+      partial.id ??
+      `${event.sessionId}:${eventTimestamp(event)}:${partial.kind}:${partial.source}:${partial.title}`,
+    timestamp: partial.timestamp ?? eventTimestamp(event),
+    ...partial,
+  };
+}
+
+function buildFallbackActivityItems(event: SessionEvent): ActivityItem[] {
+  const items: ActivityItem[] = [];
   const task = event.task?.trim();
   const hookEventName = firstMetaString(event.meta, "hook_event_name");
   const notificationType = firstMetaString(event.meta, "notification_type");
   const toolName = firstMetaString(event.meta, "tool_name");
   const unsupportedActionType = firstMetaString(event.meta, "unsupported_action_type");
+  const codexEventType = firstMetaString(event.meta, "codex_event_type");
 
   if (unsupportedActionType) {
-    lines.push(task ?? `Unsupported Cursor action: ${unsupportedActionType}`);
+    items.push(
+      createActivityItem(
+        {
+          kind: "system",
+          source: "system",
+          title: "Unsupported Cursor action",
+          body: task ?? `Unsupported Cursor action: ${unsupportedActionType}`,
+          tone: "waiting",
+        },
+        event,
+      ),
+    );
+  } else if (event.tool === "codex" && codexEventType === "user_message" && task) {
+    items.push(
+      createActivityItem(
+        {
+          kind: "message",
+          source: "user",
+          title: "User",
+          body: task,
+        },
+        event,
+      ),
+    );
+  } else if (
+    event.tool === "codex" &&
+    (codexEventType === "agent_message" || codexEventType === "task_complete") &&
+    task
+  ) {
+    items.push(
+      createActivityItem(
+        {
+          kind: "message",
+          source: "assistant",
+          title: "Assistant",
+          body: task,
+        },
+        event,
+      ),
+    );
   } else if (hookEventName === "Notification" && notificationType) {
-    lines.push(`Notification (${notificationType}): ${task ?? capitalizeStatus(event.status)}`);
+    items.push(
+      createActivityItem(
+        {
+          kind: "note",
+          source: "system",
+          title: "Notification",
+          body: task ?? capitalizeStatus(event.status),
+          tone: "waiting",
+          meta: { notificationType },
+        },
+        event,
+      ),
+    );
   } else if (hookEventName === "PreToolUse" && toolName) {
-    lines.push(`Tool call: ${toolName}`);
+    items.push(
+      createActivityItem(
+        {
+          kind: "tool",
+          source: "tool",
+          title: toolName,
+          body: toolName,
+          toolName,
+          toolPhase: "call",
+        },
+        event,
+      ),
+    );
   } else if (hookEventName === "SessionStart") {
-    lines.push(task ? `Session started: ${task}` : "Session started");
+    items.push(
+      createActivityItem(
+        {
+          kind: "system",
+          source: "system",
+          title: "Session started",
+          body: task ?? "Session started",
+        },
+        event,
+      ),
+    );
   } else if (hookEventName === "SessionEnd") {
-    lines.push(task ? `Session ended: ${task}` : "Session ended");
+    items.push(
+      createActivityItem(
+        {
+          kind: "system",
+          source: "system",
+          title: "Session ended",
+          body: task ?? "Session ended",
+        },
+        event,
+      ),
+    );
   } else {
-    lines.push(task ? `${capitalizeStatus(event.status)}: ${task}` : capitalizeStatus(event.status));
+    items.push(
+      createActivityItem(
+        {
+          kind: "note",
+          source: "system",
+          title: capitalizeStatus(event.status),
+          body: task ?? capitalizeStatus(event.status),
+          tone:
+            event.status === "running" ||
+            event.status === "completed" ||
+            event.status === "waiting" ||
+            event.status === "idle" ||
+            event.status === "error"
+              ? event.status
+              : "system",
+        },
+        event,
+      ),
+    );
   }
 
   if (event.pendingAction && event.pendingAction !== null) {
-    lines.push(`Pending action: ${event.pendingAction.title}`);
+    items.push(
+      createActivityItem(
+        {
+          kind: "note",
+          source: "system",
+          title: "Pending action",
+          body: event.pendingAction.title,
+          tone: "waiting",
+        },
+        event,
+      ),
+    );
   }
 
   if (event.pendingClosed) {
-    lines.push(`Closed action ${event.pendingClosed.actionId} (${event.pendingClosed.reason})`);
+    items.push(
+      createActivityItem(
+        {
+          kind: "system",
+          source: "system",
+          title: "Action Closed",
+          body: `Closed action ${event.pendingClosed.actionId} (${event.pendingClosed.reason})`,
+        },
+        event,
+      ),
+    );
   }
 
-  return lines;
+  return items;
 }
 
-function mergeActivities(previous: string[] | undefined, nextLines: string[]): string[] {
-  return [...new Set([...nextLines, ...(previous ?? [])])].slice(0, MAX_ACTIVITY_LINES);
+function activityDedupKey(item: ActivityItem): string {
+  return [
+    item.kind,
+    item.source,
+    item.title.trim(),
+    item.body.trim(),
+    item.tone ?? "",
+    item.toolName ?? "",
+    item.toolPhase ?? "",
+  ].join("|");
 }
 
-function prependActivity(previous: string[] | undefined, line: string): string[] {
-  return mergeActivities(previous, [line]);
+function mergeActivityItems(
+  previous: ActivityItem[] | undefined,
+  nextItems: ActivityItem[],
+): ActivityItem[] {
+  const seen = new Set<string>();
+  const merged: ActivityItem[] = [];
+
+  for (const item of [...nextItems, ...(previous ?? [])]) {
+    const key = activityDedupKey(item);
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    merged.push(item);
+    if (merged.length >= MAX_ACTIVITY_ITEMS) {
+      break;
+    }
+  }
+
+  return merged;
+}
+
+function prependActivityItem(previous: ActivityItem[] | undefined, item: ActivityItem): ActivityItem[] {
+  return mergeActivityItems(previous, [item]);
+}
+
+function activityItemToLegacyLine(item: ActivityItem): string {
+  if (item.kind === "message") {
+    return `${item.title}: ${item.body}`;
+  }
+  if (item.kind === "tool") {
+    return item.toolPhase === "call" ? `Tool call: ${item.toolName ?? item.title}` : item.body;
+  }
+  if (item.kind === "note") {
+    return item.title === item.body ? item.body : `${item.title}: ${item.body}`;
+  }
+  return item.body;
+}
+
+function toLegacyActivities(activityItems: ActivityItem[]): string[] {
+  return activityItems.map(activityItemToLegacyLine);
 }
 
 function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
@@ -118,6 +307,7 @@ function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
     ...(internal.title ? { title: internal.title } : {}),
     task: internal.task,
     updatedAt: internal.updatedAt,
+    ...(internal.activityItems.length > 0 ? { activityItems: internal.activityItems } : {}),
     ...(internal.activities.length > 0 ? { activities: internal.activities } : {}),
   };
   if (internal.pendingById.size === 0) {
@@ -160,16 +350,26 @@ export function createSessionStore() {
     if (!internal?.pendingById.has(actionId)) {
       return;
     }
+    const now = Date.now();
+    const nextActivityItems = prependActivityItem(internal.activityItems, {
+      id: `${sessionId}:${now}:closed-local:${actionId}`,
+      kind: "system",
+      source: "system",
+      title: "Action Closed",
+      body: `Closed action ${actionId} (consumed_local)`,
+      timestamp: now,
+    });
     const nextMap = new Map(internal.pendingById);
     nextMap.delete(actionId);
     const nextLedger = new Map(internal.closedLedger);
     nextLedger.set(actionId, "consumed_local");
     sessions.set(sessionId, {
       ...internal,
-      activities: prependActivity(internal.activities, `Closed action ${actionId} (consumed_local)`),
+      activityItems: nextActivityItems,
+      activities: toLegacyActivities(nextActivityItems),
       pendingById: nextMap,
       closedLedger: nextLedger,
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
   }
 
@@ -182,16 +382,26 @@ export function createSessionStore() {
     if (!internal) {
       return;
     }
+    const now = Date.now();
+    const nextActivityItems = prependActivityItem(internal.activityItems, {
+      id: `${sessionId}:${now}:closed:${actionId}:${reason}`,
+      kind: "system",
+      source: "system",
+      title: "Action Closed",
+      body: `Closed action ${actionId} (${reason})`,
+      timestamp: now,
+    });
     const nextMap = new Map(internal.pendingById);
     nextMap.delete(actionId);
     const nextLedger = new Map(internal.closedLedger);
     nextLedger.set(actionId, reason);
     sessions.set(sessionId, {
       ...internal,
-      activities: prependActivity(internal.activities, `Closed action ${actionId} (${reason})`),
+      activityItems: nextActivityItems,
+      activities: toLegacyActivities(nextActivityItems),
       pendingById: nextMap,
       closedLedger: nextLedger,
-      updatedAt: Date.now(),
+      updatedAt: now,
     });
   }
 
@@ -216,9 +426,29 @@ export function createSessionStore() {
       }
       sessions.set(sessionId, {
         ...internal,
-        activities: mergeActivities(
-          internal.activities,
-          expiredIds.map((id) => `Closed action ${id} (expired)`),
+        activityItems: mergeActivityItems(
+          internal.activityItems,
+          expiredIds.map((id) => ({
+            id: `${sessionId}:${now}:expired:${id}`,
+            kind: "system" as const,
+            source: "system" as const,
+            title: "Action Closed",
+            body: `Closed action ${id} (expired)`,
+            timestamp: now,
+          })),
+        ),
+        activities: toLegacyActivities(
+          mergeActivityItems(
+            internal.activityItems,
+            expiredIds.map((id) => ({
+              id: `${sessionId}:${now}:expired:${id}:legacy`,
+              kind: "system" as const,
+              source: "system" as const,
+              title: "Action Closed",
+              body: `Closed action ${id} (expired)`,
+              timestamp: now,
+            })),
+          ),
         ),
         pendingById: nextMap,
         closedLedger: nextLedger,
@@ -311,6 +541,11 @@ export function createSessionStore() {
         nextClosedLedger.set(actionId, reason);
       }
 
+      const nextActivityItems = mergeActivityItems(
+        prev?.activityItems,
+        event.activityItems ?? buildFallbackActivityItems(event),
+      );
+
       const internal: InternalSessionRecord = {
         id: event.sessionId,
         tool: event.tool,
@@ -318,7 +553,8 @@ export function createSessionStore() {
         title: event.title ?? prev?.title,
         task: event.task,
         updatedAt: event.timestamp,
-        activities: mergeActivities(prev?.activities, describeActivity(event)),
+        activityItems: nextActivityItems,
+        activities: toLegacyActivities(nextActivityItems),
         pendingById: nextPendingById,
         closedLedger: nextClosedLedger,
       };

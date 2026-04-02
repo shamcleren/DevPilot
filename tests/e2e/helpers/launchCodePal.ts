@@ -1,6 +1,5 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import type { ElectronApplication } from "@playwright/test";
 import { _electron as electron } from "@playwright/test";
 
@@ -8,6 +7,7 @@ const repoRoot = process.cwd();
 
 export type LaunchCodePalOptions = {
   actionResponseSocketPath: string;
+  homeDir?: string;
 };
 
 export type LaunchedCodePal = {
@@ -38,7 +38,7 @@ export async function launchCodePal(
 ): Promise<LaunchedCodePal> {
   const mainJs = path.join(repoRoot, "out/main/main.js");
   const env: NodeJS.ProcessEnv = { ...process.env };
-  const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), "codepal-ipc-"));
+  const socketDir = await fs.mkdtemp(path.join("/tmp", "codepal-ipc-"));
   const ipcSocketPath = path.join(socketDir, "hub.sock");
   delete env.ELECTRON_RENDERER_URL;
   delete env.CODEPAL_SOCKET_PATH;
@@ -51,6 +51,8 @@ export async function launchCodePal(
     cwd: repoRoot,
     env: {
       ...env,
+      ...(options.homeDir ? { HOME: options.homeDir, USERPROFILE: options.homeDir } : {}),
+      ...(options.homeDir ? { CODEPAL_HOME_DIR: options.homeDir } : {}),
       CODEPAL_SOCKET_PATH: ipcSocketPath,
       CODEPAL_ACTION_RESPONSE_MODE: "socket",
       CODEPAL_ACTION_RESPONSE_SOCKET_PATH: options.actionResponseSocketPath,

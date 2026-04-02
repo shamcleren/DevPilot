@@ -13,7 +13,11 @@ function row(overrides: Partial<MonitorSessionRow>): MonitorSessionRow {
     shortId: "0001",
     updatedLabel: "04-02 16:00",
     durationLabel: "0s",
-    activities: [],
+    pendingCount: 0,
+    loading: false,
+    collapsedSummary: "done",
+    timelineItems: [],
+    activityItems: [],
     hoverSummary: "",
     ...overrides,
   };
@@ -24,10 +28,10 @@ describe("SessionList", () => {
     const html = renderToStaticMarkup(
       <SessionList
         sessions={[
-          row({ id: "history-1", status: "completed", updatedAt: 10, task: "old done" }),
-          row({ id: "current-1", status: "running", updatedAt: 30, task: "live run" }),
-          row({ id: "history-0", status: "idle", updatedAt: 20, task: "turn aborted" }),
-          row({ id: "history-2", status: "error", updatedAt: 40, task: "failed" }),
+          row({ id: "history-1", status: "completed", updatedAt: 10, collapsedSummary: "old done" }),
+          row({ id: "current-1", status: "running", updatedAt: 30, collapsedSummary: "live run" }),
+          row({ id: "history-0", status: "idle", updatedAt: 20, collapsedSummary: "turn aborted" }),
+          row({ id: "history-2", status: "error", updatedAt: 40, collapsedSummary: "failed" }),
         ]}
         onRespond={vi.fn()}
       />,
@@ -50,7 +54,7 @@ describe("SessionList", () => {
             status: "running",
             updatedAt: 30,
             titleLabel: "Codex · repo audit",
-            task: "live run",
+            collapsedSummary: "live run",
           }),
         ]}
         onRespond={vi.fn()}

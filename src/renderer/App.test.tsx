@@ -8,9 +8,11 @@ describe("App", () => {
 
     expect(html).toContain("CodePal");
     expect(html).toContain("Sessions");
+    expect(html).toContain("app-shell");
+    expect(html).toContain("app-header__meta");
     expect(html).toContain("app-settings-drawer");
     expect(html).toContain("接入管理");
-    expect(html).toContain("CodePal Hook 命令");
+    expect(html).toContain("接入与诊断");
     expect(html).toContain("aria-label=\"打开设置\"");
   });
 });

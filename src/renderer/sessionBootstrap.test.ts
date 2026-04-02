@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import type { SessionRecord } from "../shared/sessionTypes";
+import type { ActivityItem, SessionRecord } from "../shared/sessionTypes";
 import { hydrateRowsIfEmpty, rowsFromSessions } from "./sessionBootstrap";
+
+const waitingActivity: ActivityItem = {
+  id: "activity-1",
+  kind: "note",
+  source: "system",
+  title: "Waiting",
+  body: "review change",
+  timestamp: 1_700_000_000_000,
+  tone: "waiting",
+};
 
 const currentSessions: SessionRecord[] = [
   {
@@ -9,7 +19,7 @@ const currentSessions: SessionRecord[] = [
     status: "waiting",
     task: "review change",
     updatedAt: 1_700_000_000_000,
-    activities: ["Waiting: review change", "Pending action: Pick one"],
+    activityItems: [waitingActivity],
     pendingActions: [
       {
         id: "a1",
@@ -28,12 +38,15 @@ describe("sessionBootstrap", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       id: "s1",
-      titleLabel: "CURSOR · review change",
+      titleLabel: "review change",
       shortId: "s1",
       task: "review change",
+      collapsedSummary: "Pick one",
+      pendingCount: 1,
       hoverSummary: "review change",
-      activities: ["Waiting: review change", "Pending action: Pick one"],
+      activityItems: [waitingActivity],
     });
+    expect(rows[0].timelineItems[0]?.kind).toBe("note");
     expect(rows[0].pendingActions).toEqual([
       {
         id: "a1",

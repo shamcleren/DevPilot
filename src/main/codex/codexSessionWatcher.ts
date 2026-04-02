@@ -77,6 +77,7 @@ export function createCodexSessionWatcher(options: CodexSessionWatcherOptions) {
         task: normalized.task,
         timestamp: normalized.timestamp,
         ...(normalized.meta !== undefined ? { meta: normalized.meta } : {}),
+        ...(normalized.activityItems !== undefined ? { activityItems: normalized.activityItems } : {}),
       });
     }
 

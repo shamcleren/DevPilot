@@ -21,6 +21,82 @@ export function isSessionStatus(value: string): value is SessionStatus {
 
 export type PendingActionType = "approval" | "single_choice" | "multi_choice";
 
+export type ActivityKind = "message" | "tool" | "note" | "system";
+export type ActivitySource = "user" | "assistant" | "agent" | "tool" | "system";
+export type ActivityTone =
+  | "running"
+  | "completed"
+  | "waiting"
+  | "idle"
+  | "error"
+  | "system";
+export type ActivityToolPhase = "call" | "result";
+
+export interface ActivityItem {
+  id: string;
+  kind: ActivityKind;
+  source: ActivitySource;
+  title: string;
+  body: string;
+  timestamp: number;
+  tone?: ActivityTone;
+  toolName?: string;
+  toolPhase?: ActivityToolPhase;
+  meta?: Record<string, unknown>;
+}
+
+export function isActivityItem(value: unknown): value is ActivityItem {
+  if (!value || typeof value !== "object") return false;
+  const o = value as Record<string, unknown>;
+  if (typeof o.id !== "string") return false;
+  if (
+    o.kind !== "message" &&
+    o.kind !== "tool" &&
+    o.kind !== "note" &&
+    o.kind !== "system"
+  ) {
+    return false;
+  }
+  if (
+    o.source !== "user" &&
+    o.source !== "assistant" &&
+    o.source !== "agent" &&
+    o.source !== "tool" &&
+    o.source !== "system"
+  ) {
+    return false;
+  }
+  if (typeof o.title !== "string" || typeof o.body !== "string") return false;
+  if (typeof o.timestamp !== "number") return false;
+  if (
+    "tone" in o &&
+    o.tone !== undefined &&
+    o.tone !== "running" &&
+    o.tone !== "completed" &&
+    o.tone !== "waiting" &&
+    o.tone !== "idle" &&
+    o.tone !== "error" &&
+    o.tone !== "system"
+  ) {
+    return false;
+  }
+  if (
+    "toolPhase" in o &&
+    o.toolPhase !== undefined &&
+    o.toolPhase !== "call" &&
+    o.toolPhase !== "result"
+  ) {
+    return false;
+  }
+  if ("toolName" in o && o.toolName !== undefined && typeof o.toolName !== "string") {
+    return false;
+  }
+  if ("meta" in o && o.meta !== undefined && typeof o.meta !== "object") {
+    return false;
+  }
+  return true;
+}
+
 export const PENDING_ACTION_TYPES: readonly PendingActionType[] = [
   "approval",
   "single_choice",
@@ -98,6 +174,7 @@ export interface SessionRecord {
   title?: string;
   task?: string;
   updatedAt: number;
+  activityItems?: ActivityItem[];
   activities?: string[];
   pendingActions?: PendingAction[];
 }

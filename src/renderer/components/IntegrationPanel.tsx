@@ -30,7 +30,12 @@ function lastEventLabel(agent: IntegrationAgentDiagnostics): string {
   if (!agent.lastEventAt || !agent.lastEventStatus) {
     return "最近事件：无";
   }
-  return `最近事件：${agent.lastEventStatus} @ ${new Date(agent.lastEventAt).toISOString()}`;
+  return `最近事件：${agent.lastEventStatus} · ${new Date(agent.lastEventAt).toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
 }
 
 function hookBadgeClass(agent: IntegrationAgentDiagnostics): string {
@@ -44,6 +49,18 @@ function hookBadgeClass(agent: IntegrationAgentDiagnostics): string {
     default:
       return "hook-badge hook-badge--inactive";
   }
+}
+
+function compactPathLabel(pathValue: string): string {
+  const segments = pathValue.split("/");
+  if (segments.length <= 3) {
+    return pathValue;
+  }
+  return `…/${segments.slice(-2).join("/")}`;
+}
+
+function shouldShowAction(agent: IntegrationAgentDiagnostics): boolean {
+  return agent.supported && agent.health !== "active";
 }
 
 export function IntegrationPanel({
@@ -61,10 +78,9 @@ export function IntegrationPanel({
     <section className="integration-panel" aria-label="接入管理">
       <div className="integration-panel__header">
         <div>
-          <div className="integration-panel__title">CodePal Hook 命令</div>
+          <div className="integration-panel__title">接入与诊断</div>
           <div className="integration-panel__subtitle">
-            管理本应用写入各编辑器的 hook 命令与迁移状态；新链路使用应用自身可执行入口，无需依赖外部
-            node/python3。
+            这里只放低频接入和修复。正常状态下不需要额外操作。
           </div>
           <div className="integration-panel__summary">{listenerLabel(diagnostics)}</div>
         </div>
@@ -81,9 +97,6 @@ export function IntegrationPanel({
       {runtime ? (
         <div className="integration-panel__runtime">
           <span title={runtime.executablePath}>{runtime.executableLabel}</span>
-          <span className="integration-panel__runtime-path" title={runtime.executablePath}>
-            {runtime.executablePath}
-          </span>
           <span>{runtime.packaged ? "打包构建" : "开发运行"}</span>
         </div>
       ) : null}
@@ -103,16 +116,20 @@ export function IntegrationPanel({
                 </div>
                 <span className={hookBadgeClass(agent)}>{agent.healthLabel}</span>
               </div>
-              <div className="integration-card__path">{agent.configPath}</div>
+              <div className="integration-card__path" title={agent.configPath}>
+                {compactPathLabel(agent.configPath)}
+              </div>
               <div className="integration-card__meta">{lastEventLabel(agent)}</div>
-              <button
-                type="button"
-                className="integration-card__action"
-                disabled={isInstalling}
-                onClick={() => onInstall(agent.id)}
-              >
-                {isInstalling ? "应用中…" : agent.actionLabel}
-              </button>
+              {shouldShowAction(agent) ? (
+                <button
+                  type="button"
+                  className="integration-card__action"
+                  disabled={isInstalling}
+                  onClick={() => onInstall(agent.id)}
+                >
+                  {isInstalling ? "应用中…" : agent.actionLabel}
+                </button>
+              ) : null}
             </article>
           );
         })}

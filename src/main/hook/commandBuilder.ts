@@ -16,6 +16,14 @@ function buildCodePalHookArgs(subcommand: string, eventSuffix?: string): string 
   return parts.join(" ");
 }
 
+export function buildCursorHookCommand(context: HookCommandContext): string {
+  const hookArgs = buildCodePalHookArgs("cursor");
+  if (context.packaged) {
+    return `${quoteArg(context.execPath)} ${hookArgs}`;
+  }
+  return `${quoteArg(context.execPath)} ${quoteArg(context.appPath)} ${hookArgs}`;
+}
+
 export function buildCursorLifecycleHookCommand(
   eventName: string,
   context: HookCommandContext,
