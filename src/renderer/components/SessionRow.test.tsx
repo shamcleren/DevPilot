@@ -84,4 +84,19 @@ describe("SessionRow pending action", () => {
     );
     expect(html).not.toContain("pending-action__title");
   });
+
+  it("renders activity lines in hover details", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          activities: ["Running: scan repo", "Pending action: Continue?"],
+          hoverSummary: "scan repo",
+        })}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Running: scan repo");
+    expect(html).toContain("Pending action: Continue?");
+  });
 });

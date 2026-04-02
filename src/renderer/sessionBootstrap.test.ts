@@ -9,6 +9,7 @@ const currentSessions: SessionRecord[] = [
     status: "waiting",
     task: "review change",
     updatedAt: 1_700_000_000_000,
+    activities: ["Waiting: review change", "Pending action: Pick one"],
     pendingActions: [
       {
         id: "a1",
@@ -29,6 +30,7 @@ describe("sessionBootstrap", () => {
       id: "s1",
       task: "review change",
       hoverSummary: "review change",
+      activities: ["Waiting: review change", "Pending action: Pick one"],
     });
     expect(rows[0].pendingActions).toEqual([
       {

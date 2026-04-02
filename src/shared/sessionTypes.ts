@@ -97,5 +97,6 @@ export interface SessionRecord {
   status: SessionStatus;
   task?: string;
   updatedAt: number;
+  activities?: string[];
   pendingActions?: PendingAction[];
 }

@@ -14,7 +14,7 @@ export function sessionRecordToRow(record: SessionRecord): MonitorSessionRow {
   return {
     ...record,
     durationLabel: formatDuration(record.updatedAt),
-    activities: [],
-    hoverSummary: record.task ?? record.status,
+    activities: record.activities ?? [],
+    hoverSummary: record.task ?? record.activities?.[0] ?? record.status,
   };
 }

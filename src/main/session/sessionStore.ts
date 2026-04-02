@@ -42,6 +42,7 @@ type InternalSessionRecord = {
   status: SessionStatus;
   task?: string;
   updatedAt: number;
+  activities: string[];
   pendingById: Map<string, PendingActionRuntimeState>;
   /** 最近关闭的 action（新 upsert 同 id 时会移除），供控制器去重 */
   closedLedger: Map<string, PendingCloseReason>;
@@ -52,6 +53,32 @@ export type PendingActionResponsePrep = {
   responseTarget?: ResponseTarget;
 };
 
+const MAX_ACTIVITY_LINES = 6;
+
+function capitalizeStatus(status: SessionStatus): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function describeActivity(event: SessionEvent): string[] {
+  const lines: string[] = [];
+  const task = event.task?.trim();
+  lines.push(task ? `${capitalizeStatus(event.status)}: ${task}` : capitalizeStatus(event.status));
+
+  if (event.pendingAction && event.pendingAction !== null) {
+    lines.push(`Pending action: ${event.pendingAction.title}`);
+  }
+
+  if (event.pendingClosed) {
+    lines.push(`Closed action ${event.pendingClosed.actionId} (${event.pendingClosed.reason})`);
+  }
+
+  return lines;
+}
+
+function mergeActivities(previous: string[] | undefined, nextLines: string[]): string[] {
+  return [...nextLines, ...(previous ?? [])].slice(0, MAX_ACTIVITY_LINES);
+}
+
 function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
   const base: SessionRecord = {
     id: internal.id,
@@ -59,6 +86,7 @@ function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
     status: internal.status,
     task: internal.task,
     updatedAt: internal.updatedAt,
+    ...(internal.activities.length > 0 ? { activities: internal.activities } : {}),
   };
   if (internal.pendingById.size === 0) {
     return base;
@@ -220,6 +248,7 @@ export function createSessionStore() {
         status: event.status,
         task: event.task,
         updatedAt: event.timestamp,
+        activities: mergeActivities(prev?.activities, describeActivity(event)),
         pendingById: nextPendingById,
         closedLedger: nextClosedLedger,
       };

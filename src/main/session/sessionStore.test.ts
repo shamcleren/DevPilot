@@ -21,7 +21,55 @@ describe("createSessionStore", () => {
       tool: "cursor",
       status: "running",
       task: "fix auth bug",
+      activities: ["Running: fix auth bug"],
     });
+  });
+
+  it("keeps recent activity lines in reverse chronological order", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "cursor",
+      status: "running",
+      task: "scan repo",
+      timestamp: 1,
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      task: "request approval",
+      timestamp: 2,
+      pendingAction: {
+        id: "a1",
+        type: "approval",
+        title: "Continue?",
+        options: ["Yes", "No"],
+      },
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "s1",
+      tool: "cursor",
+      status: "running",
+      task: "resumed work",
+      timestamp: 3,
+      pendingClosed: {
+        actionId: "a1",
+        reason: "consumed_local",
+      },
+    });
+
+    expect(store.getSessions()[0].activities).toEqual([
+      "Running: resumed work",
+      "Closed action a1 (consumed_local)",
+      "Waiting: request approval",
+      "Pending action: Continue?",
+      "Running: scan repo",
+    ]);
   });
 
   it("does not persist sessions when status is not a known enum value", () => {
