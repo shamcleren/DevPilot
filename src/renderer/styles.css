@@ -504,7 +504,7 @@ body {
 }
 
 .hover-details__summary {
-  margin: 0 0 8px;
+  margin: 4px 0 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
@@ -514,8 +514,42 @@ body {
   font-weight: 600;
 }
 
+.hover-details__summary-label,
+.hover-details__section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.hover-details__section-label {
+  margin-top: 10px;
+}
+
+.hover-details__latest {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.hover-details__latest-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
 .hover-details__list {
-  margin: 0;
+  margin: 8px 0 0;
   padding-left: 18px;
   color: var(--text);
   font-size: 12px;
