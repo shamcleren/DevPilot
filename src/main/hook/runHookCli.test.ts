@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sendEventLine = vi.hoisted(() => vi.fn<[], Promise<void>>());
 const runBlockingHookFromRaw = vi.hoisted(() => vi.fn<[], Promise<string | undefined>>());
+const runCodexHookPipeline = vi.hoisted(() => vi.fn<[], Promise<string | undefined>>());
 const runCursorHookPipeline = vi.hoisted(() => vi.fn<[], Promise<string | undefined>>());
 
 vi.mock("./sendEventBridge", () => ({
@@ -11,6 +12,10 @@ vi.mock("./sendEventBridge", () => ({
 
 vi.mock("./blockingHookBridge", () => ({
   runBlockingHookFromRaw,
+}));
+
+vi.mock("./codexHook", () => ({
+  runCodexHookPipeline,
 }));
 
 vi.mock("./cursorHook", () => ({
@@ -53,6 +58,7 @@ describe("runHookCli", () => {
     vi.clearAllMocks();
     sendEventLine.mockResolvedValue(undefined);
     runBlockingHookFromRaw.mockResolvedValue(undefined);
+    runCodexHookPipeline.mockResolvedValue(undefined);
     runCursorHookPipeline.mockResolvedValue(undefined);
   });
 
@@ -219,6 +225,87 @@ describe("runHookCli", () => {
     );
     expect(code).toBe(1);
     expect(sendEventLine).not.toHaveBeenCalled();
+  });
+
+  it("codex forwards raw payload into codex hook pipeline", async () => {
+    const stdout = createMockWritable();
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "codex"),
+      stdinFromString(
+        JSON.stringify({
+          type: "status_change",
+          sessionId: "s1",
+          status: "running",
+          timestamp: 1,
+        }),
+      ),
+      stdout.stream,
+      createMockWritable().stream,
+      { CODEX_HOME: "/Users/demo/.codex" },
+    );
+    expect(code).toBe(0);
+    expect(runCodexHookPipeline).toHaveBeenCalledWith(
+      JSON.stringify({
+        type: "status_change",
+        sessionId: "s1",
+        status: "running",
+        timestamp: 1,
+      }),
+      { CODEX_HOME: "/Users/demo/.codex" },
+    );
+    expect(stdout.text()).toBe("");
+  });
+
+  it("codex accepts notify payload from argv when stdin is empty", async () => {
+    const payload = JSON.stringify({
+      type: "agent-turn-complete",
+      "turn-id": "turn-1",
+      "last-assistant-message": "Done",
+    });
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "codex", payload),
+      stdinFromString(""),
+      createMockWritable().stream,
+      createMockWritable().stream,
+      {},
+    );
+
+    expect(code).toBe(0);
+    expect(runCodexHookPipeline).toHaveBeenCalledWith(payload, {});
+  });
+
+  it("codex writes blocking response line to stdout when present", async () => {
+    runCodexHookPipeline.mockResolvedValue('{"ok":true}');
+    const stdout = createMockWritable();
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "codex"),
+      stdinFromString(
+        JSON.stringify({
+          type: "status_change",
+          sessionId: "s1",
+          status: "waiting",
+          timestamp: 1,
+        }),
+      ),
+      stdout.stream,
+      createMockWritable().stream,
+      {},
+    );
+    expect(code).toBe(0);
+    expect(stdout.text()).toBe('{"ok":true}\n');
+  });
+
+  it("codex fails on empty stdin", async () => {
+    const stderr = createMockWritable();
+    const code = await runHookCli(
+      argvWithHook("--codepal-hook", "codex"),
+      stdinFromString(" "),
+      createMockWritable().stream,
+      stderr.stream,
+      {},
+    );
+    expect(code).toBe(1);
+    expect(runCodexHookPipeline).not.toHaveBeenCalled();
   });
 
   it("codebuddy injects tool and backfills source then uses blocking bridge", async () => {

@@ -322,6 +322,10 @@ export function normalizeCodexLogEvent(
           (typeof payload.name === "string" && payload.name.trim()) ||
           (typeof payload.tool_name === "string" && payload.tool_name.trim()) ||
           "Tool";
+        const callId =
+          (typeof payload.call_id === "string" && payload.call_id.trim()) ||
+          (typeof payload.callId === "string" && payload.callId.trim()) ||
+          undefined;
         const argumentsText = stringifyValue(payload.arguments) ?? stringifyValue(payload.input) ?? toolName;
         status = "running";
         task = toolName;
@@ -335,6 +339,7 @@ export function normalizeCodexLogEvent(
             timestamp,
             toolName,
             toolPhase: "call",
+            ...(callId ? { meta: { callId } } : {}),
           },
         ];
         break;
@@ -349,6 +354,10 @@ export function normalizeCodexLogEvent(
           (typeof payload.name === "string" && payload.name.trim()) ||
           (typeof payload.tool_name === "string" && payload.tool_name.trim()) ||
           "Tool";
+        const callId =
+          (typeof payload.call_id === "string" && payload.call_id.trim()) ||
+          (typeof payload.callId === "string" && payload.callId.trim()) ||
+          undefined;
         status = "running";
         task = firstLine(outputText);
         activityItems = [
@@ -361,6 +370,7 @@ export function normalizeCodexLogEvent(
             timestamp,
             toolName,
             toolPhase: "result",
+            ...(callId ? { meta: { callId } } : {}),
           },
         ];
         break;

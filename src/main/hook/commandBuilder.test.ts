@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildCodeBuddyHookCommand,
+  buildCodexHookArgv,
+  buildCodexHookCommand,
   buildCursorHookCommand,
   buildCursorLifecycleHookCommand,
   detectLegacyHookCommand,
@@ -48,6 +50,52 @@ describe("commandBuilder", () => {
         appPath: "/ignored",
       });
       expect(command).toBe('"/Applications/CodePal.app/Contents/MacOS/CodePal" --codepal-hook codebuddy');
+    });
+  });
+
+  describe("buildCodexHookCommand", () => {
+    it("builds dev-mode codex hook command", () => {
+      const command = buildCodexHookCommand({
+        packaged: false,
+        execPath: "/path/to/Electron",
+        appPath: "/path/to/repo",
+      });
+      expect(command).toBe('"/path/to/Electron" "/path/to/repo" --codepal-hook codex');
+    });
+
+    it("builds packaged codex hook command", () => {
+      const command = buildCodexHookCommand({
+        packaged: true,
+        execPath: "/Applications/CodePal.app/Contents/MacOS/CodePal",
+        appPath: "/ignored",
+      });
+      expect(command).toBe('"/Applications/CodePal.app/Contents/MacOS/CodePal" --codepal-hook codex');
+    });
+  });
+
+  describe("buildCodexHookArgv", () => {
+    it("builds dev-mode argv for config.toml notify", () => {
+      expect(
+        buildCodexHookArgv({
+          packaged: false,
+          execPath: "/path/to/Electron",
+          appPath: "/path/to/repo",
+        }),
+      ).toEqual(["/path/to/Electron", "/path/to/repo", "--codepal-hook", "codex"]);
+    });
+
+    it("builds packaged argv for config.toml notify", () => {
+      expect(
+        buildCodexHookArgv({
+          packaged: true,
+          execPath: "/Applications/CodePal.app/Contents/MacOS/CodePal",
+          appPath: "/ignored",
+        }),
+      ).toEqual([
+        "/Applications/CodePal.app/Contents/MacOS/CodePal",
+        "--codepal-hook",
+        "codex",
+      ]);
     });
   });
 

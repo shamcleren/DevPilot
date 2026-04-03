@@ -1,13 +1,20 @@
 import { useLayoutEffect, useRef } from "react";
+import claudeAppIcon from "../assets/claude-app-icon.png";
 import codexAppIcon from "../assets/codex-app-icon.png";
 import cursorAppIcon from "../assets/cursor-app-icon.png";
+import jetbrainsAppIcon from "../assets/jetbrains-app-icon.png";
+import pycharmAppIcon from "../assets/pycharm-app-icon.png";
 import type { SessionStatus } from "../../shared/sessionTypes";
+import type { PendingAction } from "../../shared/sessionTypes";
 import type { MonitorSessionRow } from "../monitorSession";
 import { HoverDetails } from "./HoverDetails";
 
 const KNOWN_TOOLS: Record<string, { label: string }> = {
+  claude: { label: "Claude" },
   cursor: { label: "Cursor" },
   codex: { label: "Codex" },
+  goland: { label: "GoLand" },
+  jetbrains: { label: "JetBrains" },
   pycharm: { label: "PyCharm" },
   codebuddy: { label: "CodeBuddy" },
 };
@@ -32,9 +39,27 @@ function ToolGlyph({ tool }: { tool: string }) {
     );
   }
 
+  if (tool === "claude") {
+    return (
+      <img src={claudeAppIcon} alt="" aria-hidden="true" className="tool-icon__img" />
+    );
+  }
+
   if (tool === "cursor") {
     return (
       <img src={cursorAppIcon} alt="" aria-hidden="true" className="tool-icon__img" />
+    );
+  }
+
+  if (tool === "goland" || tool === "jetbrains") {
+    return (
+      <img src={jetbrainsAppIcon} alt="" aria-hidden="true" className="tool-icon__img" />
+    );
+  }
+
+  if (tool === "pycharm") {
+    return (
+      <img src={pycharmAppIcon} alt="" aria-hidden="true" className="tool-icon__img" />
     );
   }
 
@@ -83,14 +108,28 @@ function pendingEyebrow(type: string): string {
   }
 }
 
+function actionDisplayOptions(action: PendingAction): string[] {
+  if (action.type === "approval") {
+    return ["Allow", "Deny"];
+  }
+  return action.options;
+}
+
 type SessionRowProps = {
   session: MonitorSessionRow;
   expanded: boolean;
+  showExperimentalControls?: boolean;
   onToggleExpanded: (sessionId: string) => void;
   onRespond: (sessionId: string, actionId: string, option: string) => void;
 };
 
-export function SessionRow({ session, expanded, onToggleExpanded, onRespond }: SessionRowProps) {
+export function SessionRow({
+  session,
+  expanded,
+  showExperimentalControls = true,
+  onToggleExpanded,
+  onRespond,
+}: SessionRowProps) {
   const detailsRef = useRef<HTMLDivElement | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const lastExpandedRef = useRef(false);
@@ -150,7 +189,7 @@ export function SessionRow({ session, expanded, onToggleExpanded, onRespond }: S
         </span>
         <span className="session-row__main">
           <span className="session-row__topline">
-            <span className="tool-name">{meta.label}</span>
+            <span className={`tool-name tool-name--${meta.key}`}>{meta.label}</span>
             <span className="session-row__title">{session.titleLabel}</span>
             <span className={`state ${stateClass}`}>{stateLabel}</span>
             <span className="session-row__time">{session.updatedLabel}</span>
@@ -195,7 +234,7 @@ export function SessionRow({ session, expanded, onToggleExpanded, onRespond }: S
           {!showLoadingPanel ? (
             <HoverDetails items={session.timelineItems} sessionStatus={session.status} />
           ) : null}
-          {pendingActions.length > 0 ? (
+          {showExperimentalControls && pendingActions.length > 0 ? (
             <div className="session-row__interaction">
               {pendingActions.map((action) => (
                 <div key={action.id} className="pending-action" aria-label={action.title}>
@@ -204,7 +243,7 @@ export function SessionRow({ session, expanded, onToggleExpanded, onRespond }: S
                   </div>
                   <div className="pending-action__title">{action.title}</div>
                   <div className="pending-action__actions">
-                    {action.options.map((option) => (
+                    {actionDisplayOptions(action).map((option) => (
                       <button
                         key={`${action.id}:${option}`}
                         type="button"

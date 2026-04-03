@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { MonitorSessionRow } from "../monitorSession";
+import { compareMonitorSessionRows } from "../sessionBootstrap";
 import { SessionRow } from "./SessionRow";
 
 type SessionListProps = {
@@ -7,18 +8,9 @@ type SessionListProps = {
   onRespond: (sessionId: string, actionId: string, option: string) => void;
 };
 
-function compareSessions(a: MonitorSessionRow, b: MonitorSessionRow): number {
-  const aUserTs = a.lastUserMessageAt ?? Number.NEGATIVE_INFINITY;
-  const bUserTs = b.lastUserMessageAt ?? Number.NEGATIVE_INFINITY;
-  if (aUserTs !== bUserTs) {
-    return bUserTs - aUserTs;
-  }
-  return b.updatedAt - a.updatedAt;
-}
-
 export function SessionList({ sessions, onRespond }: SessionListProps) {
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
-  const sortedSessions = [...sessions].sort(compareSessions);
+  const sortedSessions = [...sessions].sort(compareMonitorSessionRows);
 
   function toggleExpanded(sessionId: string) {
     setExpandedSessionId((current) => (current === sessionId ? null : sessionId));
@@ -32,6 +24,7 @@ export function SessionList({ sessions, onRespond }: SessionListProps) {
           key={session.id}
           session={session}
           expanded={expandedSessionId === session.id}
+          showExperimentalControls={false}
           onToggleExpanded={toggleExpanded}
           onRespond={onRespond}
         />

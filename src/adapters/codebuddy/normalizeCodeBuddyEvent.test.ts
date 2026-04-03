@@ -23,6 +23,9 @@ describe("normalizeCodeBuddyEvent", () => {
         tool: "codebuddy",
         status: expectation.status,
         ...(expectation.task !== undefined ? { task: expectation.task } : {}),
+        ...(expectation.activityItems !== undefined
+          ? { activityItems: expectation.activityItems }
+          : {}),
         timestamp:
           expectation.timestamp === "now"
             ? Date.parse("2026-03-31T12:00:00.000Z")
@@ -71,6 +74,14 @@ describe("normalizeCodeBuddyEvent", () => {
       sessionId: "cb-notification-fallback",
       status: "waiting",
       task: "CodeBuddy requires attention",
+      activityItems: [
+        expect.objectContaining({
+          kind: "note",
+          source: "system",
+          title: "Notification",
+          body: "CodeBuddy requires attention",
+        }),
+      ],
       timestamp: Date.parse("2026-03-31T12:00:00.000Z"),
     });
   });

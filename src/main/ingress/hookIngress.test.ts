@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CODEBUDDY_FIXTURES } from "../../../tests/fixtures/codebuddy";
-import { CURSOR_FIXTURES } from "../../../tests/fixtures/cursor";
-import { lineToSessionEvent } from "./hookIngress";
+import { CURSOR_FIXTURES, CURSOR_USAGE_FIXTURES } from "../../../tests/fixtures/cursor";
+import { lineToSessionEvent, lineToUsageSnapshot } from "./hookIngress";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -231,6 +231,9 @@ describe("lineToSessionEvent", () => {
         tool: "codebuddy",
         status: expectation.status,
         ...(expectation.task !== undefined ? { task: expectation.task } : {}),
+        ...(expectation.activityItems !== undefined
+          ? { activityItems: expectation.activityItems }
+          : {}),
         timestamp:
           expectation.timestamp === "now"
             ? Date.parse("2026-03-31T12:00:00.000Z")
@@ -528,5 +531,46 @@ describe("lineToSessionEvent", () => {
     expect(ev?.pendingAction).toEqual(pendingAction);
     expect(ev?.responseTarget).toEqual(responseTarget);
     expect(ev?.pendingClosed).toEqual(pendingClosed);
+  });
+});
+
+describe("lineToUsageSnapshot", () => {
+  it.each(CURSOR_USAGE_FIXTURES)(
+    "extracts usage from Cursor fixture $id",
+    ({ payload, expectation }) => {
+      const snapshot = lineToUsageSnapshot(JSON.stringify(payload));
+
+      expect(snapshot).toEqual({
+        agent: expectation.agent,
+        sessionId: expectation.sessionId,
+        source: "session-derived",
+        updatedAt: expectation.updatedAt,
+        title: "Summarizing usage",
+        tokens: {
+          input: expectation.tokens.input,
+          output: expectation.tokens.output,
+          total: expectation.tokens.total,
+          cachedInput: undefined,
+          reasoningOutput: undefined,
+        },
+        context: expectation.context,
+        cost: undefined,
+        rateLimit: expectation.rateLimit,
+      });
+    },
+  );
+
+  it("returns null when the payload carries no usage information", () => {
+    const snapshot = lineToUsageSnapshot(
+      JSON.stringify({
+        tool: "cursor",
+        source: "cursor",
+        session_id: "cursor-no-usage",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+      }),
+    );
+
+    expect(snapshot).toBeNull();
   });
 });

@@ -10,6 +10,7 @@ import type {
 } from "../../shared/integrationTypes";
 import {
   buildCodeBuddyHookCommand,
+  buildCodexHookArgv,
   buildCursorHookCommand,
   detectLegacyHookCommand,
   type HookCommandContext,
@@ -105,6 +106,25 @@ function readOptionalJson(pathname: string): {
   }
 }
 
+function readOptionalText(pathname: string): {
+  exists: boolean;
+  text?: string;
+  error?: string;
+} {
+  if (!fs.existsSync(pathname)) {
+    return { exists: false };
+  }
+
+  try {
+    return { exists: true, text: fs.readFileSync(pathname, "utf8") };
+  } catch (error) {
+    return {
+      exists: true,
+      error: `配置文件无法读取：${(error as Error).message}`,
+    };
+  }
+}
+
 function ensureParentDir(pathname: string) {
   fs.mkdirSync(path.dirname(pathname), { recursive: true });
 }
@@ -157,32 +177,184 @@ function codeBuddyHookScriptPath(hookScriptsRoot: string): string {
   return path.join(hookScriptsRoot, "codebuddy-hook.sh");
 }
 
+function codexConfigPath(homeDir: string): string {
+  return path.join(homeDir, ".codex", "config.toml");
+}
+
 function codexSessionsPath(homeDir: string): string {
   return path.join(homeDir, ".codex", "sessions");
 }
 
+type CodexNotifyConfig =
+  | { kind: "missing" }
+  | { kind: "parsed"; argv: string[]; start: number; end: number }
+  | { kind: "invalid"; message: string };
+
+function arrayBracketBalance(value: string): number {
+  return [...value].reduce((balance, char) => {
+    if (char === "[") return balance + 1;
+    if (char === "]") return balance - 1;
+    return balance;
+  }, 0);
+}
+
+function readCodexNotifyConfig(text: string): CodexNotifyConfig {
+  const pattern = /^notify\s*=\s*/gm;
+  const match = pattern.exec(text);
+  if (!match || match.index === undefined) {
+    return { kind: "missing" };
+  }
+
+  const valueStart = match.index + match[0].length;
+  let cursor = valueStart;
+  let balance = 0;
+  let sawBracket = false;
+
+  while (cursor < text.length) {
+    const char = text[cursor];
+    if (char === "[") {
+      sawBracket = true;
+    }
+    if (sawBracket) {
+      balance += arrayBracketBalance(char);
+      if (balance === 0) {
+        cursor += 1;
+        break;
+      }
+    } else if (!/\s/.test(char)) {
+      return { kind: "invalid", message: "Codex config.toml notify 必须是字符串数组" };
+    }
+    cursor += 1;
+  }
+
+  if (!sawBracket || balance !== 0) {
+    return { kind: "invalid", message: "Codex config.toml notify 数组不完整" };
+  }
+
+  const raw = text.slice(valueStart, cursor).trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    return {
+      kind: "invalid",
+      message: `Codex config.toml notify 不是可解析的字符串数组：${(error as Error).message}`,
+    };
+  }
+
+  if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) {
+    return { kind: "invalid", message: "Codex config.toml notify 必须是字符串数组" };
+  }
+
+  let end = cursor;
+  while (end < text.length && text[end] !== "\n") {
+    end += 1;
+  }
+  if (end < text.length && text[end] === "\n") {
+    end += 1;
+  }
+
+  return { kind: "parsed", argv: parsed, start: match.index, end };
+}
+
+function codexNotifyArrayLiteral(argv: string[]): string {
+  return `[${argv.map((value) => JSON.stringify(value)).join(", ")}]`;
+}
+
+function arraysEqual(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length && left.every((value, index) => value === right[index])
+  );
+}
+
+function upsertCodexNotifyConfig(text: string, argv: string[]): { changed: boolean; text: string } {
+  const nextLine = `notify = ${codexNotifyArrayLiteral(argv)}\n`;
+  const current = readCodexNotifyConfig(text);
+
+  if (current.kind === "invalid") {
+    throw new Error(current.message);
+  }
+  if (current.kind === "parsed") {
+    if (arraysEqual(current.argv, argv)) {
+      return { changed: false, text };
+    }
+    return {
+      changed: true,
+      text: `${text.slice(0, current.start)}${nextLine}${text.slice(current.end)}`,
+    };
+  }
+
+  if (!text.trim()) {
+    return { changed: true, text: nextLine };
+  }
+
+  const firstTableIndex = text.search(/^\[/m);
+  if (firstTableIndex === -1) {
+    const prefix = text.endsWith("\n") ? text : `${text}\n`;
+    return { changed: true, text: `${prefix}${nextLine}` };
+  }
+
+  const prefix = text.slice(0, firstTableIndex);
+  const suffix = text.slice(firstTableIndex);
+  const joiner = prefix.trim().length === 0 ? "" : prefix.endsWith("\n\n") ? "" : "\n";
+  return {
+    changed: true,
+    text: `${prefix}${joiner}${nextLine}${suffix}`,
+  };
+}
+
 function inspectCodexConfig(
   homeDir: string,
+  hookCtx: HookCommandContext,
   lastEvent?: LastEvent,
 ): IntegrationAgentDiagnostics {
-  const configPath = codexSessionsPath(homeDir);
-  const configExists = fs.existsSync(configPath);
-  const health: IntegrationHealth = configExists ? "active" : "not_configured";
+  const configPath = codexConfigPath(homeDir);
+  const sessionsPath = codexSessionsPath(homeDir);
+  const sessionsExist = fs.existsSync(sessionsPath);
+  const config = readOptionalText(configPath);
+  const desiredNotifyArgv = buildCodexHookArgv(hookCtx);
+
+  let health: IntegrationHealth = "not_configured";
+  let hookInstalled = false;
+  let statusMessage = sessionsExist
+    ? "自动读取 Codex session 日志，完成通知 notify hook 尚未启用"
+    : "未配置 Codex hook，也未找到 session 日志目录";
+
+  if (config.error) {
+    health = "repair_needed";
+    statusMessage = config.error;
+  } else if (config.text !== undefined) {
+    const notify = readCodexNotifyConfig(config.text);
+    if (notify.kind === "invalid") {
+      health = "repair_needed";
+      statusMessage = notify.message;
+    } else if (notify.kind === "parsed" && arraysEqual(notify.argv, desiredNotifyArgv)) {
+      health = "active";
+      hookInstalled = true;
+      statusMessage = sessionsExist
+        ? "已配置 Codex 完成通知 notify hook，并自动读取 session 日志"
+        : "已配置 Codex 完成通知 notify hook，等待 Codex session 日志";
+    } else if (notify.kind === "parsed") {
+      health = "repair_needed";
+      statusMessage = "Codex config.toml notify 与当前 CodePal 要求不一致";
+    }
+  }
+
   const { healthLabel } = labelsForHealth(health);
 
   return {
     id: "codex",
     label: AGENT_LABELS.codex,
-    supported: false,
+    supported: true,
     configPath,
-    configExists,
+    configExists: config.exists,
     hookScriptPath: configPath,
-    hookScriptExists: configExists,
-    hookInstalled: configExists,
+    hookScriptExists: config.exists,
+    hookInstalled,
     health,
     healthLabel,
-    actionLabel: "自动接入",
-    statusMessage: configExists ? "自动读取 Codex session 日志" : "未找到 Codex session 日志目录",
+    actionLabel: labelsForHealth(health).actionLabel,
+    statusMessage,
     ...(lastEvent ? { lastEventAt: lastEvent.at, lastEventStatus: lastEvent.status } : {}),
   };
 }
@@ -557,6 +729,31 @@ function installCodeBuddyHooksFile(
   return { changed, backupPath };
 }
 
+function installCodexHooksFile(
+  homeDir: string,
+  hookCtx: HookCommandContext,
+  now: () => number,
+): { changed: boolean; backupPath?: string } {
+  const configPath = codexConfigPath(homeDir);
+  const current = readOptionalText(configPath);
+  if (current.error) {
+    throw new Error(current.error);
+  }
+
+  const next = upsertCodexNotifyConfig(current.text ?? "", buildCodexHookArgv(hookCtx));
+  let backupPath: string | undefined;
+
+  if (next.changed) {
+    ensureParentDir(configPath);
+    if (current.exists) {
+      backupPath = backupFile(configPath, now);
+    }
+    fs.writeFileSync(configPath, next.text);
+  }
+
+  return { changed: next.changed, backupPath };
+}
+
 function formatExecutableLabel(packaged: boolean, execPath: string): string {
   const base = path.basename(execPath);
   return packaged ? `已打包 · ${base}` : `开发模式 · ${base}`;
@@ -581,7 +778,7 @@ export function createIntegrationService(options: IntegrationServiceOptions) {
   function getAgentDiagnostics(agentId: IntegrationAgentId): IntegrationAgentDiagnostics {
     const hookCtx = integrationHookContext();
     if (agentId === "codex") {
-      return inspectCodexConfig(options.homeDir, lastEvents.get(agentId));
+      return inspectCodexConfig(options.homeDir, hookCtx, lastEvents.get(agentId));
     }
     if (agentId === "cursor") {
       return inspectCursorConfig(
@@ -625,23 +822,13 @@ export function createIntegrationService(options: IntegrationServiceOptions) {
       };
     },
     installHooks(agentId: IntegrationAgentId): IntegrationInstallResult {
-      if (agentId === "codex") {
-        const diagnostics = getAgentDiagnostics(agentId);
-        return {
-          agentId,
-          configPath: diagnostics.configPath,
-          changed: false,
-          hookInstalled: diagnostics.hookInstalled,
-          health: diagnostics.health,
-          message: diagnostics.statusMessage,
-          diagnostics,
-        };
-      }
       const hookCtx = integrationHookContext();
       const result =
         agentId === "cursor"
           ? installCursorHooksFile(options.homeDir, hookCtx, now)
-          : installCodeBuddyHooksFile(options.homeDir, hookCtx, now);
+          : agentId === "codebuddy"
+            ? installCodeBuddyHooksFile(options.homeDir, hookCtx, now)
+            : installCodexHooksFile(options.homeDir, hookCtx, now);
 
       const diagnostics = getAgentDiagnostics(agentId);
       return {

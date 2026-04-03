@@ -1,13 +1,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { SessionEvent } from "../session/sessionStore";
+import { ACTIVE_SESSION_STALENESS_MS } from "../session/sessionStore";
 import { normalizeCodexLogEvent } from "../../adapters/codex/normalizeCodexLogEvent";
 import { isSessionStatus } from "../../shared/sessionTypes";
+import type { UsageSnapshot } from "../../shared/usageTypes";
 
 type CodexSessionWatcherOptions = {
   sessionsRoot: string;
   onEvent: (event: SessionEvent) => void;
+  onUsageSnapshot?: (snapshot: UsageSnapshot) => void;
   pollIntervalMs?: number;
+  initialBootstrapLookbackMs?: number;
 };
 
 type FileCursor = {
@@ -39,13 +43,138 @@ function listJsonlFiles(root: string): string[] {
     .sort();
 }
 
+function parseLine(line: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function pickRateLimit(snapshot: Record<string, unknown>): UsageSnapshot["rateLimit"] | undefined {
+  const primary =
+    snapshot.primary && typeof snapshot.primary === "object"
+      ? (snapshot.primary as Record<string, unknown>)
+      : undefined;
+  const secondary =
+    snapshot.secondary && typeof snapshot.secondary === "object"
+      ? (snapshot.secondary as Record<string, unknown>)
+      : undefined;
+  if (!primary && !secondary) return undefined;
+  const windows = [
+    primary
+      ? {
+          key: "primary",
+          label:
+            typeof primary.window_minutes === "number" && primary.window_minutes === 300
+              ? "5 小时"
+              : `${String(primary.window_minutes ?? "")}m`,
+          usedPercent: numberValue(primary.used_percent),
+          resetAt: numberValue(primary.resets_at),
+          windowLabel:
+            typeof primary.window_minutes === "number" ? `${primary.window_minutes}m` : undefined,
+          planType: typeof snapshot.plan_type === "string" ? snapshot.plan_type : undefined,
+        }
+      : null,
+    secondary
+      ? {
+          key: "secondary",
+          label:
+            typeof secondary.window_minutes === "number" && secondary.window_minutes === 10080
+              ? "7 天"
+              : `${String(secondary.window_minutes ?? "")}m`,
+          usedPercent: numberValue(secondary.used_percent),
+          resetAt: numberValue(secondary.resets_at),
+          windowLabel:
+            typeof secondary.window_minutes === "number" ? `${secondary.window_minutes}m` : undefined,
+          planType: typeof snapshot.plan_type === "string" ? snapshot.plan_type : undefined,
+        }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
+  return {
+    usedPercent: primary ? numberValue(primary.used_percent) : undefined,
+    resetAt: primary ? numberValue(primary.resets_at) : undefined,
+    windowLabel:
+      primary && typeof primary.window_minutes === "number" ? `${primary.window_minutes}m` : undefined,
+    planType: typeof snapshot.plan_type === "string" ? snapshot.plan_type : undefined,
+    windows,
+  };
+}
+
+function usageSnapshotFromLine(line: string, sourcePath: string): UsageSnapshot | null {
+  const entry = parseLine(line);
+  if (!entry || entry.type !== "event_msg") {
+    return null;
+  }
+  const payload =
+    entry.payload && typeof entry.payload === "object"
+      ? (entry.payload as Record<string, unknown>)
+      : null;
+  if (!payload || payload.type !== "token_count") {
+    return null;
+  }
+  const sessionId = sessionIdFromPath(sourcePath);
+  if (!sessionId) {
+    return null;
+  }
+  const info = payload.info && typeof payload.info === "object" ? (payload.info as Record<string, unknown>) : {};
+  const totalUsage =
+    info.total_token_usage && typeof info.total_token_usage === "object"
+      ? (info.total_token_usage as Record<string, unknown>)
+      : {};
+  const modelContextWindow = numberValue(info.model_context_window);
+  const totalTokens = numberValue(totalUsage.total_tokens);
+  const rateLimits =
+    payload.rate_limits && typeof payload.rate_limits === "object"
+      ? (payload.rate_limits as Record<string, unknown>)
+      : {};
+  return {
+    agent: "codex",
+    sessionId,
+    source: "session-derived",
+    updatedAt: typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Date.now(),
+    tokens: {
+      input: numberValue(totalUsage.input_tokens),
+      output: numberValue(totalUsage.output_tokens),
+      total: totalTokens,
+      cachedInput: numberValue(totalUsage.cached_input_tokens),
+      reasoningOutput: numberValue(totalUsage.reasoning_output_tokens),
+    },
+    context:
+      totalTokens !== undefined && modelContextWindow !== undefined
+        ? {
+            used: totalTokens,
+            max: modelContextWindow,
+            percent: (totalTokens / modelContextWindow) * 100,
+          }
+        : modelContextWindow !== undefined
+          ? { max: modelContextWindow }
+          : undefined,
+    rateLimit: pickRateLimit(rateLimits),
+  };
+}
+
+function sessionIdFromPath(sourcePath: string): string | null {
+  const basename = path.basename(sourcePath);
+  const match = basename.match(/([0-9a-f]{8,}(?:-[0-9a-f]{4,}){3,})\.jsonl$/i);
+  return match?.[1] ?? null;
+}
+
 export function createCodexSessionWatcher(options: CodexSessionWatcherOptions) {
   const pollIntervalMs = options.pollIntervalMs ?? 1500;
+  const initialBootstrapLookbackMs =
+    options.initialBootstrapLookbackMs ?? ACTIVE_SESSION_STALENESS_MS;
   const cursors = new Map<string, FileCursor>();
   let timer: ReturnType<typeof setInterval> | null = null;
   const debug = process.env.CODEPAL_DEBUG_CODEX === "1";
+  let didInitialBootstrap = false;
 
-  async function pollFile(filePath: string) {
+  async function pollFile(filePath: string, initialCutoffMs: number | null) {
     const stat = fs.statSync(filePath);
     const existing = cursors.get(filePath) ?? { offset: 0, remainder: "" };
     const offset = stat.size < existing.offset ? 0 : existing.offset;
@@ -59,6 +188,18 @@ export function createCodexSessionWatcher(options: CodexSessionWatcherOptions) {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
+      if (initialCutoffMs !== null) {
+        const entry = parseLine(trimmed);
+        const parsedTimestamp =
+          typeof entry?.timestamp === "string" ? Date.parse(entry.timestamp) : NaN;
+        if (Number.isFinite(parsedTimestamp) && parsedTimestamp < initialCutoffMs) {
+          continue;
+        }
+      }
+      const usageSnapshot = usageSnapshotFromLine(trimmed, filePath);
+      if (usageSnapshot) {
+        options.onUsageSnapshot?.(usageSnapshot);
+      }
       const normalized = normalizeCodexLogEvent(trimmed, filePath);
       if (!normalized || !isSessionStatus(normalized.status)) continue;
       if (debug) {
@@ -89,13 +230,19 @@ export function createCodexSessionWatcher(options: CodexSessionWatcherOptions) {
 
   return {
     async pollOnce() {
+      const initialCutoffMs = didInitialBootstrap
+        ? null
+        : Number.isFinite(initialBootstrapLookbackMs)
+          ? Date.now() - initialBootstrapLookbackMs
+          : null;
       const files = listJsonlFiles(options.sessionsRoot);
       if (debug) {
         console.log("[CodePal Codex] polling root", options.sessionsRoot, "files", files);
       }
       for (const filePath of files) {
-        await pollFile(filePath);
+        await pollFile(filePath, initialCutoffMs);
       }
+      didInitialBootstrap = true;
     },
     start() {
       if (timer !== null) return;

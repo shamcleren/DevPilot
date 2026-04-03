@@ -24,13 +24,69 @@ function formatUpdatedAt(updatedAt: number): string {
   });
 }
 
-function buildTitleLabel(record: SessionRecord): string {
-  if (record.title?.trim()) {
+const LOW_SIGNAL_EVENT_NAMES = new Set([
+  "Stop",
+  "SubagentStop",
+  "UserPromptSubmit",
+  "SessionStart",
+  "SessionEnd",
+  "PreToolUse",
+  "PostToolUse",
+  "beforeSubmitPrompt",
+  "beforeShellExecution",
+  "beforeReadFile",
+  "beforeMCPExecution",
+  "afterMCPExecution",
+  "afterShellExecution",
+  "afterAgentThought",
+  "afterAgentResponse",
+  "afterFileEdit",
+]);
+
+function isLowSignalSurfaceText(text: string | undefined): boolean {
+  if (!text) {
+    return true;
+  }
+
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return true;
+  }
+
+  if (LOW_SIGNAL_SYSTEM_BODIES.has(trimmed)) {
+    return true;
+  }
+
+  return LOW_SIGNAL_EVENT_NAMES.has(trimmed);
+}
+
+function preferredTimelineSurfaceText(timelineItems: TimelineItem[]): string | undefined {
+  for (const item of timelineItems) {
+    const body = item.body.trim();
+    if (!body || isLowSignalSurfaceText(body)) {
+      continue;
+    }
+    if (item.kind === "message") {
+      return lastMeaningfulSentence(body);
+    }
+    return body;
+  }
+
+  return undefined;
+}
+
+function buildTitleLabel(record: SessionRecord, timelineItems: TimelineItem[]): string {
+  if (record.title?.trim() && !isLowSignalSurfaceText(record.title)) {
     return record.title.trim();
   }
 
-  if (record.task?.trim()) {
+  if (record.task?.trim() && !isLowSignalSurfaceText(record.task)) {
     return record.task.trim();
+  }
+
+  const preferredTimeline = preferredTimelineSurfaceText(timelineItems);
+  if (preferredTimeline) {
+    return preferredTimeline;
   }
 
   return `Session ${formatUpdatedAt(record.updatedAt)}`;
@@ -392,6 +448,9 @@ function buildCollapsedSummary(record: SessionRecord, timelineItems: TimelineIte
     if (titleLike.has(comparable)) {
       return false;
     }
+    if (isLowSignalSurfaceText(item.body)) {
+      return false;
+    }
     if (item.kind === "message") {
       return true;
     }
@@ -402,7 +461,13 @@ function buildCollapsedSummary(record: SessionRecord, timelineItems: TimelineIte
   });
 
   if (!preferred) {
-    return record.task?.trim() || record.status;
+    if (record.task?.trim() && !isLowSignalSurfaceText(record.task)) {
+      return record.task.trim();
+    }
+    if (record.title?.trim() && !isLowSignalSurfaceText(record.title)) {
+      return record.title.trim();
+    }
+    return record.status;
   }
 
   if (preferred.kind === "message") {
@@ -422,7 +487,7 @@ export function sessionRecordToRow(record: SessionRecord): MonitorSessionRow {
   const fallbackSummary = loading ? "正在读取…" : undefined;
   return {
     ...record,
-    titleLabel: buildTitleLabel(record),
+    titleLabel: buildTitleLabel(record, timelineItems),
     shortId: shortSessionId(record.id),
     updatedLabel: formatUpdatedAt(record.updatedAt),
     durationLabel: formatDuration(record.updatedAt),

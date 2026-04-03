@@ -212,7 +212,7 @@ describe("createIntegrationService", () => {
     });
   });
 
-  it("reports active Codex diagnostics when session logs exist", () => {
+  it("reports Codex as not_configured when only session logs exist", () => {
     const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
     const codexSessionsRoot = join(homeDir, ".codex", "sessions");
     mkdirSync(codexSessionsRoot, { recursive: true });
@@ -228,12 +228,85 @@ describe("createIntegrationService", () => {
     const codex = service.getDiagnostics().agents.find((agent) => agent.id === "codex");
     expect(codex).toMatchObject({
       id: "codex",
+      supported: true,
+      health: "not_configured",
+      healthLabel: "未配置",
+      actionLabel: "启用",
+      hookInstalled: false,
+      statusMessage: "自动读取 Codex session 日志，完成通知 notify hook 尚未启用",
+      configPath: join(homeDir, ".codex", "config.toml"),
+    });
+  });
+
+  it("installs codex notify hook idempotently without clobbering existing config", () => {
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
+    const configPath = join(homeDir, ".codex", "config.toml");
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        'model = "gpt-5.4"',
+        "",
+        '[projects."/Users/demo"]',
+        'trust_level = "trusted"',
+        "",
+      ].join("\n"),
+    );
+
+    const service = createIntegrationService({
+      homeDir,
+      hookScriptsRoot,
+      packaged: false,
+      execPath,
+      appPath,
+      now: () => 77,
+    });
+
+    const first = service.installHooks("codex");
+    const second = service.installHooks("codex");
+    const text = readFileSync(configPath, "utf8");
+
+    expect(first.changed).toBe(true);
+    expect(first.hookInstalled).toBe(true);
+    expect(first.backupPath).toBe(`${configPath}.bak.77`);
+    expect(second.changed).toBe(false);
+    expect(text).toContain('model = "gpt-5.4"');
+    expect(text).toContain(
+      `notify = ["${execPath}", "${appPath}", "--codepal-hook", "codex"]`,
+    );
+    expect(text).toContain('[projects."/Users/demo"]');
+    expect(text).toContain('trust_level = "trusted"');
+  });
+
+  it("reports active Codex diagnostics when notify hook is configured", () => {
+    const { homeDir, hookScriptsRoot, execPath, appPath } = createFixtureLayout();
+    const codexSessionsRoot = join(homeDir, ".codex", "sessions");
+    const configPath = join(homeDir, ".codex", "config.toml");
+    mkdirSync(codexSessionsRoot, { recursive: true });
+    mkdirSync(dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      `notify = ["${execPath}", "${appPath}", "--codepal-hook", "codex"]\n`,
+    );
+
+    const service = createIntegrationService({
+      homeDir,
+      hookScriptsRoot,
+      packaged: false,
+      execPath,
+      appPath,
+    });
+
+    const codex = service.getDiagnostics().agents.find((agent) => agent.id === "codex");
+    expect(codex).toMatchObject({
+      id: "codex",
+      supported: true,
       health: "active",
       healthLabel: "正常",
-      actionLabel: "自动接入",
+      actionLabel: "修复",
       hookInstalled: true,
-      statusMessage: "自动读取 Codex session 日志",
-      configPath: codexSessionsRoot,
+      statusMessage: "已配置 Codex 完成通知 notify hook，并自动读取 session 日志",
+      configPath,
     });
   });
 

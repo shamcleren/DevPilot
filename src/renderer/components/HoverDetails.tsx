@@ -351,6 +351,26 @@ function ToolTextBlock({ text }: { text: string }) {
   return <pre className="session-stream__plaintext session-stream__plaintext--log">{text}</pre>;
 }
 
+function toolBodySummary(text: string): string {
+  const compact = text
+    .replace(/\s+/g, " ")
+    .replace(/\s*([{}[\],:])\s*/g, "$1 ")
+    .trim();
+
+  if (!compact) {
+    return "";
+  }
+
+  return compact;
+}
+
+function shouldShowArtifactName(item: TimelineItem): boolean {
+  if (!item.toolName) {
+    return false;
+  }
+  return item.toolName.trim().toLowerCase() !== item.label.trim().toLowerCase();
+}
+
 export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
   const chronologicalItems = [...items].reverse();
   const primaryItems = chronologicalItems.filter((item) => item.kind === "message" || item.kind === "tool");
@@ -434,18 +454,16 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
                 >
                   <div className="session-stream__artifact-accent" aria-hidden="true" />
                   <div className="session-stream__artifact-copy">
-                    <div className="session-stream__artifact-eyebrow">
+                    <div className="session-stream__header">
                       <span className="session-stream__artifact-kicker">Execution</span>
-                      {item.toolName ? (
+                      <span className="session-stream__label">{item.label}</span>
+                      {shouldShowArtifactName(item) ? (
                         <span className="session-stream__artifact-name">{item.toolName}</span>
                       ) : null}
-                    </div>
-                    <div className="session-stream__header">
-                      <span className="session-stream__label">{item.label}</span>
                       {item.toolPhase ? (
                         <span className="session-stream__artifact-type">{item.toolPhase}</span>
                       ) : null}
-                      {item.body.length > 72 ? (
+                      {item.body.length > 72 || item.body.includes("\n") ? (
                         <button
                           type="button"
                           className="session-stream__artifact-toggle"
@@ -463,15 +481,15 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
                       className="session-stream__body"
                     >
                       <div className="session-stream__artifact-body-shell">
-                        <div
-                          className={`session-stream__artifact-body ${
-                            expanded
-                              ? "session-stream__artifact-body--expanded"
-                              : "session-stream__artifact-body--collapsed"
-                          }`}
-                        >
-                          <ToolTextBlock text={item.body} />
-                        </div>
+                        {expanded ? (
+                          <div className="session-stream__artifact-body session-stream__artifact-body--expanded">
+                            <ToolTextBlock text={item.body} />
+                          </div>
+                        ) : (
+                          <div className="session-stream__artifact-summary" title={item.body}>
+                            {toolBodySummary(item.body)}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

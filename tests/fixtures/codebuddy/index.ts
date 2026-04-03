@@ -13,6 +13,15 @@ export interface CodeBuddyFixtureExpectation {
   task?: string;
   timestamp: number | "now";
   meta?: Record<string, string>;
+  activityItems?: Array<{
+    kind: string;
+    source: string;
+    title: string;
+    body: string;
+    toolName?: string;
+    toolPhase?: string;
+    tone?: string;
+  }>;
 }
 
 export interface CodeBuddyFixtureDescriptor {
@@ -44,6 +53,15 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "waiting",
       task: "review diff",
       timestamp: 1710000000001,
+      activityItems: [
+        {
+          kind: "note",
+          source: "system",
+          title: "Waiting",
+          body: "review diff",
+          tone: "waiting",
+        },
+      ],
       meta: {
         hook_event_name: "AgentSessionUpdate",
         cwd: "/workspace/demo",
@@ -65,6 +83,15 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "running",
       task: "index workspace",
       timestamp: 1710000000002,
+      activityItems: [
+        {
+          kind: "note",
+          source: "system",
+          title: "Running",
+          body: "index workspace",
+          tone: "running",
+        },
+      ],
       meta: {
         hook_event_name: "AgentSessionUpdate",
         cwd: "/workspace/demo",
@@ -86,6 +113,14 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "running",
       task: "startup",
       timestamp: "now",
+      activityItems: [
+        {
+          kind: "system",
+          source: "system",
+          title: "SessionStart",
+          body: "startup",
+        },
+      ],
       meta: {
         hook_event_name: "SessionStart",
         source: "startup",
@@ -107,6 +142,15 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "waiting",
       task: "CodeBuddy needs your permission to use Bash",
       timestamp: "now",
+      activityItems: [
+        {
+          kind: "note",
+          source: "system",
+          title: "Notification",
+          body: "CodeBuddy needs your permission to use Bash",
+          tone: "waiting",
+        },
+      ],
       meta: {
         hook_event_name: "Notification",
         notification_type: "permission_prompt",
@@ -128,6 +172,15 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "idle",
       task: "CodeBuddy has been idle for 60 seconds",
       timestamp: "now",
+      activityItems: [
+        {
+          kind: "note",
+          source: "system",
+          title: "Notification",
+          body: "CodeBuddy has been idle for 60 seconds",
+          tone: "waiting",
+        },
+      ],
       meta: {
         hook_event_name: "Notification",
         notification_type: "idle_prompt",
@@ -149,6 +202,14 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "running",
       task: "Write a function to calculate the factorial of a number",
       timestamp: "now",
+      activityItems: [
+        {
+          kind: "message",
+          source: "user",
+          title: "User",
+          body: "Write a function to calculate the factorial of a number",
+        },
+      ],
       meta: {
         hook_event_name: "UserPromptSubmit",
       },
@@ -169,6 +230,16 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "running",
       task: "Write",
       timestamp: "now",
+      activityItems: [
+        {
+          kind: "tool",
+          source: "tool",
+          title: "Write",
+          body: "/workspace/demo/src/index.ts",
+          toolName: "Write",
+          toolPhase: "call",
+        },
+      ],
       meta: {
         hook_event_name: "PreToolUse",
         tool_name: "Write",
@@ -190,6 +261,15 @@ export const CODEBUDDY_FIXTURES: readonly CodeBuddyFixtureDescriptor[] = [
       status: "offline",
       task: "other",
       timestamp: "now",
+      activityItems: [
+        {
+          kind: "system",
+          source: "system",
+          title: "SessionEnd",
+          body: "other",
+          tone: "system",
+        },
+      ],
       meta: {
         hook_event_name: "SessionEnd",
         reason: "other",

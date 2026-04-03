@@ -7,12 +7,19 @@ describe("App", () => {
     const html = renderToStaticMarkup(<App />);
 
     expect(html).toContain("CodePal");
+    expect(html).not.toContain("Control Deck");
+    expect(html).not.toContain("Run ");
+    expect(html).not.toContain("Wait ");
+    expect(html).not.toContain("Err ");
     expect(html).toContain("Sessions");
+    expect(html).toContain("显示与用量");
+    expect(html).toContain("实验功能");
     expect(html).toContain("app-shell");
     expect(html).toContain("app-header__meta");
     expect(html).toContain("app-settings-drawer");
     expect(html).toContain("接入管理");
     expect(html).toContain("接入与诊断");
     expect(html).toContain("aria-label=\"打开设置\"");
+    expect(html.match(/aria-label="显示与用量"/g)?.length).toBe(1);
   });
 });

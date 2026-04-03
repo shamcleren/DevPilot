@@ -16,6 +16,11 @@ function buildCodePalHookArgs(subcommand: string, eventSuffix?: string): string 
   return parts.join(" ");
 }
 
+function buildCodePalHookArgv(subcommand: string, context: HookCommandContext): string[] {
+  const executableArgs = context.packaged ? [context.execPath] : [context.execPath, context.appPath];
+  return [...executableArgs, "--codepal-hook", subcommand];
+}
+
 export function buildCursorHookCommand(context: HookCommandContext): string {
   const hookArgs = buildCodePalHookArgs("cursor");
   if (context.packaged) {
@@ -41,6 +46,18 @@ export function buildCodeBuddyHookCommand(context: HookCommandContext): string {
     return `${quoteArg(context.execPath)} ${hookArgs}`;
   }
   return `${quoteArg(context.execPath)} ${quoteArg(context.appPath)} ${hookArgs}`;
+}
+
+export function buildCodexHookCommand(context: HookCommandContext): string {
+  const hookArgs = buildCodePalHookArgs("codex");
+  if (context.packaged) {
+    return `${quoteArg(context.execPath)} ${hookArgs}`;
+  }
+  return `${quoteArg(context.execPath)} ${quoteArg(context.appPath)} ${hookArgs}`;
+}
+
+export function buildCodexHookArgv(context: HookCommandContext): string[] {
+  return buildCodePalHookArgv("codex", context);
 }
 
 export function detectLegacyHookCommand(command: string): boolean {

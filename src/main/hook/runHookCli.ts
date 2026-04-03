@@ -1,4 +1,5 @@
 import { runBlockingHookFromRaw } from "./blockingHookBridge";
+import { runCodexHookPipeline } from "./codexHook";
 import { buildCursorLifecycleEventLine } from "./cursorLifecycleHook";
 import { runCodeBuddyHookPipeline } from "./codeBuddyHook";
 import { runCursorHookPipeline } from "./cursorHook";
@@ -28,6 +29,7 @@ type ParsedArgv =
   | { kind: "none" }
   | { kind: "invalid"; message: string }
   | { kind: "codebuddy" }
+  | { kind: "codex"; payloadArg?: string }
   | { kind: "cursor" }
   | { kind: "cursor-lifecycle"; phase: "sessionStart" | "stop" }
   | { kind: "send-event" }
@@ -48,6 +50,12 @@ function parseArgv(argv: string[]): ParsedArgv {
   }
   if (subcommand === "codebuddy") {
     return { kind: "codebuddy" };
+  }
+  if (subcommand === "codex") {
+    const payloadArg = argv[index + 2];
+    return typeof payloadArg === "string" && payloadArg.trim()
+      ? { kind: "codex", payloadArg }
+      : { kind: "codex" };
   }
   if (subcommand === "cursor") {
     return { kind: "cursor" };
@@ -130,6 +138,18 @@ export async function runHookCli(
         throw new Error("codeBuddyHook: empty payload");
       }
       const line = await runCodeBuddyHookPipeline(rawText, env);
+      if (line !== undefined && line !== "") {
+        stdout.write(`${line}\n`);
+      }
+      return 0;
+    }
+
+    if (parsed.kind === "codex") {
+      const codexPayload = rawText || parsed.payloadArg?.trim() || "";
+      if (!codexPayload) {
+        throw new Error("codexHook: empty payload");
+      }
+      const line = await runCodexHookPipeline(codexPayload, env);
       if (line !== undefined && line !== "") {
         stdout.write(`${line}\n`);
       }

@@ -18,7 +18,14 @@ describe("renderer layout styles", () => {
     const css = fs.readFileSync(stylesPath, "utf8");
 
     expect(css).toMatch(/\.status-bar\s*\{[\s\S]*align-items:\s*center;/);
+    expect(css).toMatch(/\.status-bar\s*\{[\s\S]*justify-content:\s*space-between;/);
     expect(css).toMatch(/\.status-bar\s*\{[\s\S]*padding:\s*10px 12px;/);
+    expect(css).toMatch(/\.status-bar__group\s*\{/);
+    expect(css).toMatch(/\.usage-strip\s*\{/);
+    expect(css).toMatch(/\.usage-strip__agent\s*\{/);
+    expect(css).toMatch(/\.display-panel\s*\{/);
+    expect(css).toMatch(/\.display-panel__summary\s*\{/);
+    expect(css).toMatch(/\.display-panel__actions\s*\{/);
     expect(css).toMatch(/\.session-row__summary-text\s*\{[\s\S]*white-space:\s*nowrap;/);
     expect(css).toMatch(/\.session-row__pending\s*\{/);
     expect(css).toMatch(/\.session-row--running\s*\{/);
@@ -43,7 +50,7 @@ describe("renderer layout styles", () => {
     expect(css).toMatch(/\.session-stream__item--artifact-result\s+\.session-stream__body\s*\{/);
     expect(css).toMatch(/\.session-stream__artifact-type\s*\{[\s\S]*font-size:\s*8px;/);
     expect(css).toMatch(/\.session-stream__artifact-body-shell\s*\{/);
-    expect(css).toMatch(/\.session-stream__artifact-body--collapsed\s*\{[\s\S]*max-height:/);
+    expect(css).toMatch(/\.session-stream__artifact-summary\s*\{[\s\S]*text-overflow:\s*ellipsis;/);
     expect(css).toMatch(/\.session-stream__item--note\s*\{/);
     expect(css).toMatch(/\.session-stream__section--primary\s*\{/);
     expect(css).toMatch(/\.session-stream__item--artifact-active::after\s*\{/);

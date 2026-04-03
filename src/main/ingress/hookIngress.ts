@@ -3,6 +3,7 @@ import { normalizeCursorEvent } from "../../adapters/cursor/normalizeCursorEvent
 import { isStatusChangeUpstreamEvent } from "../../adapters/shared/eventEnvelope";
 import type { SessionEvent } from "../session/sessionStore";
 import type { PendingAction, PendingClosed, ResponseTarget } from "../session/sessionTypes";
+import type { UsageSnapshot } from "../../shared/usageTypes";
 import {
   isPendingAction,
   isPendingClosed,
@@ -90,6 +91,172 @@ function looksLikeCanonicalStatusChange(o: Record<string, unknown>): boolean {
   );
 }
 
+function firstRecord(
+  payload: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    const value = payload[key];
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return undefined;
+}
+
+function firstString(payload: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function firstNumber(payload: Record<string, unknown>, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function pickRawSessionId(payload: Record<string, unknown>): string | undefined {
+  return firstString(payload, [
+    "sessionId",
+    "session_id",
+    "conversationId",
+    "conversation_id",
+    "generationId",
+    "generation_id",
+  ]);
+}
+
+function pickRawTool(payload: Record<string, unknown>): string | undefined {
+  return firstString(payload, ["tool", "source"]);
+}
+
+function pickRawTimestamp(payload: Record<string, unknown>): number {
+  const direct = firstNumber(payload, ["timestamp", "ts"]);
+  return direct ?? Date.now();
+}
+
+function usageSnapshotFromRecord(payload: Record<string, unknown>): UsageSnapshot | null {
+  const sessionId = pickRawSessionId(payload);
+  const agent = pickRawTool(payload);
+  if (!sessionId || !agent) {
+    return null;
+  }
+
+  const usage = firstRecord(payload, ["usage", "token_usage"]);
+  const rateLimits = firstRecord(payload, ["rate_limits", "rateLimits"]);
+  const context = firstRecord(payload, ["context", "context_window"]);
+  const meta = firstRecord(payload, ["meta"]);
+
+  const tokenSource = usage ?? meta;
+  const total = firstNumber(payload, ["total_tokens"]) ?? firstNumber(tokenSource ?? {}, ["total", "total_tokens"]);
+  const input = firstNumber(payload, ["input_tokens"]) ?? firstNumber(tokenSource ?? {}, ["input", "input_tokens"]);
+  const output =
+    firstNumber(payload, ["output_tokens"]) ?? firstNumber(tokenSource ?? {}, ["output", "output_tokens"]);
+  const cachedInput =
+    firstNumber(payload, ["cached_input_tokens"]) ??
+    firstNumber(tokenSource ?? {}, ["cachedInput", "cached_input_tokens"]);
+  const reasoningOutput =
+    firstNumber(payload, ["reasoning_output_tokens"]) ??
+    firstNumber(tokenSource ?? {}, ["reasoningOutput", "reasoning_output_tokens"]);
+
+  const contextUsed =
+    firstNumber(context ?? {}, ["used"]) ??
+    firstNumber(payload, ["context_used"]) ??
+    total;
+  const contextMax =
+    firstNumber(context ?? {}, ["max"]) ??
+    firstNumber(payload, ["context_max", "context_window"]) ??
+    firstNumber(meta ?? {}, ["model_context_window"]);
+  const contextPercent =
+    firstNumber(context ?? {}, ["percent", "used_percent"]) ??
+    (contextUsed !== undefined && contextMax !== undefined && contextMax > 0
+      ? (contextUsed / contextMax) * 100
+      : undefined);
+
+  const ratePrimary =
+    firstRecord(rateLimits ?? {}, ["primary"]) ??
+    firstRecord(payload, ["primary_rate_limit"]);
+  const usedPercent =
+    firstNumber(ratePrimary ?? {}, ["used_percent", "usedPercent"]) ??
+    firstNumber(rateLimits ?? {}, ["used_percent", "usedPercent"]);
+  const resetAt =
+    firstNumber(ratePrimary ?? {}, ["resets_at", "resetAt"]) ??
+    firstNumber(rateLimits ?? {}, ["resets_at", "resetAt"]);
+  const windowMinutes =
+    firstNumber(ratePrimary ?? {}, ["window_minutes"]) ??
+    firstNumber(rateLimits ?? {}, ["window_minutes"]);
+
+  const cost = firstRecord(payload, ["cost"]);
+
+  if (
+    input === undefined &&
+    output === undefined &&
+    total === undefined &&
+    contextUsed === undefined &&
+    contextMax === undefined &&
+    usedPercent === undefined &&
+    resetAt === undefined &&
+    !cost
+  ) {
+    return null;
+  }
+
+  return {
+    agent,
+    sessionId,
+    source: "session-derived",
+    updatedAt: pickRawTimestamp(payload),
+    title: firstString(payload, ["task", "title"]),
+    tokens:
+      input !== undefined ||
+      output !== undefined ||
+      total !== undefined ||
+      cachedInput !== undefined ||
+      reasoningOutput !== undefined
+        ? {
+            input,
+            output,
+            total,
+            cachedInput,
+            reasoningOutput,
+          }
+        : undefined,
+    context:
+      contextUsed !== undefined || contextMax !== undefined || contextPercent !== undefined
+        ? {
+            used: contextUsed,
+            max: contextMax,
+            percent: contextPercent,
+          }
+        : undefined,
+    cost: cost
+      ? {
+          reported: firstNumber(cost, ["reported"]),
+          estimated: firstNumber(cost, ["estimated"]),
+          currency: firstString(cost, ["currency"]),
+        }
+      : undefined,
+    rateLimit:
+      usedPercent !== undefined || resetAt !== undefined || windowMinutes !== undefined
+        ? {
+            usedPercent,
+            resetAt,
+            windowLabel: windowMinutes !== undefined ? `${windowMinutes}m` : undefined,
+            planType: firstString(rateLimits ?? {}, ["plan_type", "planType"]),
+          }
+        : undefined,
+  };
+}
+
 /**
  * 将 hook / bridge 发来的一行 JSON 转为可写入 sessionStore 的事件。
  */
@@ -153,4 +320,29 @@ export function lineToSessionEvent(line: string): SessionEvent | null {
     ...(responseTargetPart !== undefined ? { responseTarget: responseTargetPart } : {}),
     ...(pendingClosedPart !== undefined ? { pendingClosed: pendingClosedPart } : {}),
   } as SessionEvent;
+}
+
+export function lineToUsageSnapshot(line: string): UsageSnapshot | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const payload = parsed as Record<string, unknown>;
+
+  if (isStatusChangeUpstreamEvent(parsed)) {
+    const canonical = parsed as Record<string, unknown>;
+    const meta = canonical.meta && typeof canonical.meta === "object" ? (canonical.meta as Record<string, unknown>) : {};
+    return usageSnapshotFromRecord({
+      ...meta,
+      tool: canonical.tool,
+      sessionId: canonical.sessionId,
+      timestamp: canonical.timestamp,
+      task: canonical.task,
+    });
+  }
+
+  return usageSnapshotFromRecord(payload);
 }

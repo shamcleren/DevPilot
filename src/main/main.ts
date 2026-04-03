@@ -3,22 +3,28 @@ import fs from "node:fs";
 import { createActionResponseTransport } from "./actionResponse/createActionResponseTransport";
 import { dispatchActionResponse } from "./actionResponse/dispatchActionResponse";
 import { HOOK_CLI_NOT_HOOK_MODE, runHookCli } from "./hook/runHookCli";
-import { lineToSessionEvent } from "./ingress/hookIngress";
+import { lineToSessionEvent, lineToUsageSnapshot } from "./ingress/hookIngress";
 import { createIntegrationService } from "./integrations/integrationService";
 import { createIpcHub } from "./ipc/ipcHub";
 import { createSessionStore } from "./session/sessionStore";
 import { createTray } from "./tray/createTray";
 import { createFloatingWindow } from "./window/createFloatingWindow";
 import { createCodexSessionWatcher } from "./codex/codexSessionWatcher";
+import { createClaudeSessionWatcher } from "./claude/claudeSessionWatcher";
 import type { SessionRecord } from "../shared/sessionTypes";
+import type { UsageOverview, UsageSnapshot } from "../shared/usageTypes";
+import { createCursorDashboardService } from "./usage/cursorDashboardService";
+import { createUsageStore } from "./usage/usageStore";
 
 const sessionStore = createSessionStore();
+const usageStore = createUsageStore();
 const actionResponseTransport = createActionResponseTransport(process.env);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let pendingExpirySweepTimer: ReturnType<typeof setInterval> | null = null;
 let codexSessionWatcher: ReturnType<typeof createCodexSessionWatcher> | null = null;
+let claudeSessionWatcher: ReturnType<typeof createClaudeSessionWatcher> | null = null;
 const debugCodex = process.env.CODEPAL_DEBUG_CODEX === "1";
 
 // Hook 入口已并入应用可执行文件；这里只保留一个可推导 legacy 路径形态的根目录。
@@ -40,6 +46,13 @@ function broadcastSessions() {
   win.webContents.send("codepal:sessions", payload);
 }
 
+function broadcastUsageOverview() {
+  const win = mainWindow;
+  if (!win || win.isDestroyed()) return;
+  const payload: UsageOverview = usageStore.getOverview();
+  win.webContents.send("codepal:usage-overview", payload);
+}
+
 function sweepExpiredPendingActions() {
   const now = Date.now();
   const changed =
@@ -51,6 +64,7 @@ function sweepExpiredPendingActions() {
 
 function wireActionResponseIpc(
   integrationService: ReturnType<typeof createIntegrationService>,
+  cursorDashboardService: ReturnType<typeof createCursorDashboardService>,
 ) {
   ipcMain.handle("codepal:get-sessions", () => {
     const sessions = sessionStore.getSessions();
@@ -63,9 +77,25 @@ function wireActionResponseIpc(
     }
     return sessions;
   });
+  ipcMain.handle("codepal:get-usage-overview", () => {
+    return usageStore.getOverview();
+  });
   ipcMain.handle("codepal:get-integration-diagnostics", () =>
     integrationService.getDiagnostics(),
   );
+  ipcMain.handle("codepal:get-cursor-dashboard-diagnostics", () =>
+    cursorDashboardService.getDiagnostics(),
+  );
+  ipcMain.handle("codepal:connect-cursor-dashboard", async () => {
+    const result = await cursorDashboardService.connectAndSync();
+    broadcastUsageOverview();
+    return result;
+  });
+  ipcMain.handle("codepal:refresh-cursor-dashboard-usage", async () => {
+    const result = await cursorDashboardService.refreshUsage();
+    broadcastUsageOverview();
+    return result;
+  });
   ipcMain.handle("codepal:install-integration-hooks", (_event, payload: unknown) => {
     const agentId =
       payload &&
@@ -135,6 +165,11 @@ function getOrCreateMainWindow(): BrowserWindow {
 
 function wireIpcHub(integrationService: ReturnType<typeof createIntegrationService>) {
   const { server } = createIpcHub((line) => {
+    const usageSnapshot = lineToUsageSnapshot(line);
+    if (usageSnapshot) {
+      usageStore.applySnapshot(usageSnapshot);
+      broadcastUsageOverview();
+    }
     const event = lineToSessionEvent(line);
     if (event) {
       sessionStore.applyEvent(event);
@@ -217,6 +252,8 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
       }
       codexSessionWatcher?.stop();
       codexSessionWatcher = null;
+      claudeSessionWatcher?.stop();
+      claudeSessionWatcher = null;
       if (tray && !tray.isDestroyed()) {
         tray.destroy();
       }
@@ -237,8 +274,13 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
         execPath: process.execPath,
         appPath: app.getAppPath(),
       });
+      const cursorDashboardService = createCursorDashboardService({
+        onUsageSnapshot: (snapshot: UsageSnapshot) => {
+          usageStore.applySnapshot(snapshot);
+        },
+      });
 
-      wireActionResponseIpc(integrationService);
+      wireActionResponseIpc(integrationService, cursorDashboardService);
       wireIpcHub(integrationService);
       codexSessionWatcher = createCodexSessionWatcher({
         sessionsRoot:
@@ -249,14 +291,42 @@ void runHookCli(process.argv, process.stdin, process.stdout, process.stderr, pro
           integrationService.recordEvent(event.tool, event.status, event.timestamp);
           broadcastSessions();
         },
+        onUsageSnapshot: (snapshot: UsageSnapshot) => {
+          usageStore.applySnapshot(snapshot);
+          broadcastUsageOverview();
+        },
+      });
+      claudeSessionWatcher = createClaudeSessionWatcher({
+        projectsRoot:
+          process.env.CODEPAL_CLAUDE_PROJECTS_ROOT?.trim() ||
+          `${app.getPath("home")}/.claude/projects`,
+        onEvent: (event) => {
+          sessionStore.applyEvent(event);
+          integrationService.recordEvent(event.tool, event.status, event.timestamp);
+          broadcastSessions();
+        },
+        onUsageSnapshot: (snapshot: UsageSnapshot) => {
+          usageStore.applySnapshot(snapshot);
+          broadcastUsageOverview();
+        },
       });
       void codexSessionWatcher.pollOnce().catch((error) => {
         console.error("[CodePal Codex] initial poll failed:", (error as Error).message);
       });
+      void claudeSessionWatcher.pollOnce().catch((error) => {
+        console.error("[CodePal Claude] initial poll failed:", (error as Error).message);
+      });
+      void cursorDashboardService.refreshUsage().then((result) => {
+        if (result.synced) {
+          broadcastUsageOverview();
+        }
+      });
       codexSessionWatcher.start();
+      claudeSessionWatcher.start();
       const win = getOrCreateMainWindow();
       win.webContents.once("dom-ready", () => {
         broadcastSessions();
+        broadcastUsageOverview();
       });
       tray = createTray({
         onOpenMain: () => {

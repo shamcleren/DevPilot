@@ -12,7 +12,9 @@ import {
 
 /** 无 responseTarget.timeoutMs 时用于计算 pending 过期时间 */
 export const DEFAULT_PENDING_LIFECYCLE_TIMEOUT_MS = 25_000;
-export const SESSION_HISTORY_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+export const ACTIVE_SESSION_STALENESS_MS = 24 * 60 * 60 * 1000;
+export const COMPLETED_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const ERROR_SESSION_RETENTION_MS = 48 * 60 * 60 * 1000;
 export const MAX_HISTORY_SESSION_COUNT = 150;
 const MAX_ACTIVITY_ITEMS = 6;
 
@@ -69,6 +71,11 @@ function capitalizeStatus(status: SessionStatus): string {
 
 function firstMetaString(meta: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = meta?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function activityMetaString(item: ActivityItem, key: string): string | undefined {
+  const value = item.meta?.[key];
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
@@ -279,6 +286,47 @@ function mergeActivityItems(
   return merged;
 }
 
+function enrichCodexToolResults(
+  previous: ActivityItem[] | undefined,
+  nextItems: ActivityItem[],
+): ActivityItem[] {
+  const callNameById = new Map<string, string>();
+
+  for (const item of [...nextItems, ...(previous ?? [])]) {
+    const callId = activityMetaString(item, "callId");
+    const toolName = item.toolName?.trim() || item.title.trim();
+    if (!callId || item.kind !== "tool" || item.toolPhase !== "call" || !toolName) {
+      continue;
+    }
+    if (!callNameById.has(callId)) {
+      callNameById.set(callId, toolName);
+    }
+  }
+
+  return nextItems.map((item) => {
+    const callId = activityMetaString(item, "callId");
+    if (
+      !callId ||
+      item.kind !== "tool" ||
+      item.toolPhase !== "result" ||
+      ((item.toolName && item.toolName !== "Tool") || item.title !== "Tool")
+    ) {
+      return item;
+    }
+
+    const resolvedToolName = callNameById.get(callId);
+    if (!resolvedToolName) {
+      return item;
+    }
+
+    return {
+      ...item,
+      title: resolvedToolName,
+      toolName: resolvedToolName,
+    };
+  });
+}
+
 function prependActivityItem(previous: ActivityItem[] | undefined, item: ActivityItem): ActivityItem[] {
   return mergeActivityItems(previous, [item]);
 }
@@ -327,6 +375,19 @@ function isCurrentStatus(status: SessionStatus): boolean {
   return status === "running" || status === "waiting";
 }
 
+function sessionRetentionMs(status: SessionStatus): number | null {
+  if (status === "running" || status === "waiting") {
+    return ACTIVE_SESSION_STALENESS_MS;
+  }
+  if (status === "error") {
+    return ERROR_SESSION_RETENTION_MS;
+  }
+  if (status === "completed" || status === "idle" || status === "offline") {
+    return COMPLETED_SESSION_RETENTION_MS;
+  }
+  return null;
+}
+
 function eventCarriesUserMessage(event: SessionEvent): boolean {
   if (event.activityItems?.some((item) => item.kind === "message" && item.source === "user")) {
     return true;
@@ -352,7 +413,7 @@ export function createSessionStore() {
     if (!state) {
       return null;
     }
-    const line = stringifyActionResponsePayload(sessionId, actionId, option);
+    const line = stringifyActionResponsePayload(sessionId, actionId, option, state.action.type);
     return {
       line,
       ...(state.responseTarget !== undefined
@@ -477,10 +538,11 @@ export function createSessionStore() {
   function expireStaleSessions(now: number): boolean {
     const nextEntries = [...sessions.entries()]
       .filter(([, session]) => {
-        if (isCurrentStatus(session.status)) {
+        const retentionMs = sessionRetentionMs(session.status);
+        if (retentionMs === null) {
           return true;
         }
-        return now - session.updatedAt < SESSION_HISTORY_RETENTION_MS;
+        return now - session.updatedAt < retentionMs;
       })
       .sort((a, b) => b[1].updatedAt - a[1].updatedAt);
 
@@ -559,7 +621,12 @@ export function createSessionStore() {
 
       const nextActivityItems = mergeActivityItems(
         prev?.activityItems,
-        event.activityItems ?? buildFallbackActivityItems(event),
+        event.tool === "codex"
+          ? enrichCodexToolResults(
+              prev?.activityItems,
+              event.activityItems ?? buildFallbackActivityItems(event),
+            )
+          : (event.activityItems ?? buildFallbackActivityItems(event)),
       );
       const nextLastUserMessageAt = eventCarriesUserMessage(event)
         ? event.timestamp
@@ -611,7 +678,10 @@ export function createSessionStore() {
           if (aUserTs !== bUserTs) {
             return bUserTs - aUserTs;
           }
-          return b.updatedAt - a.updatedAt;
+          if (a.updatedAt !== b.updatedAt) {
+            return b.updatedAt - a.updatedAt;
+          }
+          return a.id.localeCompare(b.id);
         })
         .map(toSessionRecord);
     },

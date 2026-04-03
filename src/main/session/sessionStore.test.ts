@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { lineToSessionEvent } from "../ingress/hookIngress";
 import type { SessionStatus } from "./sessionTypes";
-import { createSessionStore } from "./sessionStore";
+import {
+  ACTIVE_SESSION_STALENESS_MS,
+  COMPLETED_SESSION_RETENTION_MS,
+  ERROR_SESSION_RETENTION_MS,
+  createSessionStore,
+} from "./sessionStore";
 
 describe("createSessionStore", () => {
   it("updates a session from incoming event envelopes", () => {
@@ -258,6 +263,83 @@ describe("createSessionStore", () => {
     ]);
   });
 
+  it("backfills codex tool result names from the earlier call when function_call_output only has call_id", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-tools",
+      tool: "codex",
+      status: "running",
+      task: "shell",
+      timestamp: 10,
+      activityItems: [
+        {
+          id: "call-item",
+          kind: "tool",
+          source: "tool",
+          title: "shell",
+          body: "{\"command\":\"npm test\"}",
+          timestamp: 10,
+          toolName: "shell",
+          toolPhase: "call",
+          meta: {
+            callId: "call_123",
+          },
+        },
+      ],
+      meta: {
+        event_type: "response_item",
+        item_type: "function_call",
+      },
+    });
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-tools",
+      tool: "codex",
+      status: "running",
+      task: "PASS npm test",
+      timestamp: 11,
+      activityItems: [
+        {
+          id: "result-item",
+          kind: "tool",
+          source: "tool",
+          title: "Tool",
+          body: "PASS npm test",
+          timestamp: 11,
+          toolName: "Tool",
+          toolPhase: "result",
+          meta: {
+            callId: "call_123",
+          },
+        },
+      ],
+      meta: {
+        event_type: "response_item",
+        item_type: "function_call_output",
+      },
+    });
+
+    expect(store.getSessions()[0].activityItems).toEqual([
+      expect.objectContaining({
+        kind: "tool",
+        title: "shell",
+        toolName: "shell",
+        toolPhase: "result",
+        body: "PASS npm test",
+      }),
+      expect.objectContaining({
+        kind: "tool",
+        title: "shell",
+        toolName: "shell",
+        toolPhase: "call",
+        body: "{\"command\":\"npm test\"}",
+      }),
+    ]);
+  });
+
   it("keeps codex user and agent messages distinguishable in activity lines", () => {
     const store = createSessionStore();
 
@@ -337,7 +419,7 @@ describe("createSessionStore", () => {
     expect(store.getSessions()).toHaveLength(0);
   });
 
-  it("expires only stale history sessions and keeps current sessions", () => {
+  it("expires completed history sessions after the dashboard retention window", () => {
     const store = createSessionStore();
 
     store.applyEvent({
@@ -350,11 +432,42 @@ describe("createSessionStore", () => {
       sessionId: "live-1",
       tool: "cursor",
       status: "running",
-      timestamp: 2,
+      timestamp: 1 + COMPLETED_SESSION_RETENTION_MS,
     });
 
-    expect(store.expireStaleSessions(8 * 24 * 60 * 60 * 1000)).toBe(true);
+    expect(store.expireStaleSessions(1 + COMPLETED_SESSION_RETENTION_MS + 1)).toBe(true);
     expect(store.getSessions().map((session) => session.id)).toEqual(["live-1"]);
+  });
+
+  it("keeps error sessions longer than completed history before expiring them", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      sessionId: "error-1",
+      tool: "cursor",
+      status: "error",
+      timestamp: 100,
+    });
+
+    expect(store.expireStaleSessions(100 + COMPLETED_SESSION_RETENTION_MS + 1)).toBe(false);
+    expect(store.getSessions().map((session) => session.id)).toEqual(["error-1"]);
+
+    expect(store.expireStaleSessions(100 + ERROR_SESSION_RETENTION_MS + 1)).toBe(true);
+    expect(store.getSessions()).toEqual([]);
+  });
+
+  it("expires stale waiting sessions after the active-session freshness window", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      sessionId: "wait-1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 10,
+    });
+
+    expect(store.expireStaleSessions(10 + ACTIVE_SESSION_STALENESS_MS + 1)).toBe(true);
+    expect(store.getSessions()).toEqual([]);
   });
 
   it("trims history to the newest retained sessions without dropping current sessions", () => {
@@ -495,14 +608,14 @@ describe("createSessionStore", () => {
       tool: "cursor",
       status: "waiting",
       timestamp: 1,
-      pendingAction: { id: "x", type: "approval", title: "Old", options: ["OK"] },
+      pendingAction: { id: "x", type: "approval", title: "Old", options: ["Allow", "Deny"] },
       responseTarget: t1,
     });
     const updated = {
       id: "x",
       type: "approval" as const,
       title: "NewTitle",
-      options: ["OK", "Cancel"],
+      options: ["Allow", "Deny"],
     };
     store.applyEvent({
       sessionId: "s1",
@@ -512,7 +625,7 @@ describe("createSessionStore", () => {
       pendingAction: updated,
     });
     expect(store.getSessions()[0].pendingActions).toEqual([updated]);
-    expect(store.preparePendingActionResponse("s1", "x", "OK")).toMatchObject({
+    expect(store.preparePendingActionResponse("s1", "x", "Allow")).toMatchObject({
       responseTarget: t1,
     });
   });
@@ -526,7 +639,7 @@ describe("createSessionStore", () => {
       tool: "cursor",
       status: "waiting",
       timestamp: 1,
-      pendingAction: { id: "x", type: "approval", title: "T", options: ["OK"] },
+      pendingAction: { id: "x", type: "approval", title: "T", options: ["Allow", "Deny"] },
       responseTarget: t1,
     });
     store.applyEvent({
@@ -534,10 +647,10 @@ describe("createSessionStore", () => {
       tool: "cursor",
       status: "waiting",
       timestamp: 2,
-      pendingAction: { id: "x", type: "approval", title: "T", options: ["OK"] },
+      pendingAction: { id: "x", type: "approval", title: "T", options: ["Allow", "Deny"] },
       responseTarget: t2,
     });
-    expect(store.preparePendingActionResponse("s1", "x", "OK")).toMatchObject({
+    expect(store.preparePendingActionResponse("s1", "x", "Allow")).toMatchObject({
       responseTarget: t2,
     });
   });
@@ -554,20 +667,41 @@ describe("createSessionStore", () => {
         id: "act-x",
         type: "approval",
         title: "T",
-        options: ["OK"],
+        options: ["Allow", "Deny"],
       },
       responseTarget: target,
     });
-    const prep = store.preparePendingActionResponse("s1", "act-x", "OK");
+    const prep = store.preparePendingActionResponse("s1", "act-x", "Allow");
     expect(prep).toEqual({
       line: JSON.stringify({
         type: "action_response",
         sessionId: "s1",
         actionId: "act-x",
-        response: { kind: "option", value: "OK" },
+        response: { kind: "approval", decision: "allow" },
       }),
       responseTarget: target,
     });
+    expect(store.getSessions()[0].pendingActions).toHaveLength(1);
+  });
+
+  it("rejects approval responses outside the allowed decision set", () => {
+    const store = createSessionStore();
+    store.applyEvent({
+      sessionId: "s1",
+      tool: "cursor",
+      status: "waiting",
+      timestamp: 1,
+      pendingAction: {
+        id: "act-x",
+        type: "approval",
+        title: "T",
+        options: ["Allow", "Deny"],
+      },
+    });
+
+    expect(() => store.preparePendingActionResponse("s1", "act-x", "Later")).toThrow(
+      "invalid approval option",
+    );
     expect(store.getSessions()[0].pendingActions).toHaveLength(1);
   });
 
@@ -715,11 +849,11 @@ describe("createSessionStore", () => {
           id: "act-1",
           type: "approval",
           title: "T",
-          options: ["OK"],
+          options: ["Allow", "Deny"],
         },
       });
       vi.setSystemTime(5000);
-      store.respondToPendingAction("s1", "act-1", "OK");
+      store.respondToPendingAction("s1", "act-1", "Allow");
       expect(store.getSessions()[0].updatedAt).toBe(5000);
     } finally {
       vi.useRealTimers();
@@ -894,12 +1028,12 @@ describe("createSessionStore", () => {
         id: "x",
         type: "approval",
         title: "T",
-        options: ["OK"],
+        options: ["Allow", "Deny"],
       },
     });
-    expect(store.preparePendingActionResponse("s1", "x", "OK")).not.toBeNull();
+    expect(store.preparePendingActionResponse("s1", "x", "Allow")).not.toBeNull();
     store.closePendingAction("s1", "x", "cancelled");
-    expect(store.preparePendingActionResponse("s1", "x", "OK")).toBeNull();
+    expect(store.preparePendingActionResponse("s1", "x", "Allow")).toBeNull();
   });
 
   it("re-upsert after close clears closed ledger and allows prepare again", () => {
@@ -913,7 +1047,7 @@ describe("createSessionStore", () => {
         id: "x",
         type: "approval",
         title: "T",
-        options: ["OK"],
+        options: ["Allow", "Deny"],
       },
     });
     store.closePendingAction("s1", "x", "cancelled");
@@ -927,10 +1061,10 @@ describe("createSessionStore", () => {
         id: "x",
         type: "approval",
         title: "Again",
-        options: ["OK"],
+        options: ["Allow", "Deny"],
       },
     });
     expect(store.isPendingActionClosed("s1", "x")).toBe(false);
-    expect(store.preparePendingActionResponse("s1", "x", "OK")).not.toBeNull();
+    expect(store.preparePendingActionResponse("s1", "x", "Allow")).not.toBeNull();
   });
 });

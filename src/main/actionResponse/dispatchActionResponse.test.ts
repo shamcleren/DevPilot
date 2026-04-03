@@ -172,7 +172,7 @@ describe("dispatchActionResponse", () => {
         id: "keep",
         type: "approval",
         title: "K",
-        options: ["OK"],
+        options: ["Allow", "Deny"],
       },
     });
     store.applyEvent({
@@ -185,7 +185,7 @@ describe("dispatchActionResponse", () => {
         id: "remove-me",
         type: "approval",
         title: "R",
-        options: ["OK"],
+        options: ["Allow", "Deny"],
       },
     });
 
@@ -199,7 +199,7 @@ describe("dispatchActionResponse", () => {
       broadcastSessions,
       "s1",
       "remove-me",
-      "OK",
+      "Allow",
     );
 
     expect(closeSpy).toHaveBeenCalledTimes(1);

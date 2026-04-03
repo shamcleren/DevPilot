@@ -6,6 +6,7 @@ import hookBeforeMCPExecutionUri from "./hook-before-mcp-execution-uri.json";
 import hookBeforeReadFile from "./hook-before-read-file.json";
 import hookNotificationIdlePrompt from "./hook-notification-idle-prompt.json";
 import hookPostToolUseResponseResultOutput from "./hook-post-tool-use-response-result-output.json";
+import hookStatusChangeUsage from "./hook-status-change-usage.json";
 
 export interface CursorFixtureDescriptor {
   id: string;
@@ -26,6 +27,34 @@ export interface CursorFixtureDescriptor {
       tone?: string;
     }>;
     meta?: Record<string, string>;
+  };
+}
+
+export interface CursorUsageFixtureDescriptor {
+  id: string;
+  source: "quasi-real";
+  description: string;
+  payload: Record<string, unknown>;
+  expectation: {
+    agent: string;
+    sessionId: string;
+    updatedAt: number;
+    tokens: {
+      input: number;
+      output: number;
+      total: number;
+    };
+    context: {
+      used: number;
+      max: number;
+      percent: number;
+    };
+    rateLimit: {
+      usedPercent: number;
+      resetAt: number;
+      windowLabel: string;
+      planType: string;
+    };
   };
 }
 
@@ -219,6 +248,36 @@ export const CURSOR_FIXTURES: readonly CursorFixtureDescriptor[] = [
       meta: {
         hook_event_name: "PostToolUse",
         tool_name: "Edit",
+      },
+    },
+  },
+] as const;
+
+export const CURSOR_USAGE_FIXTURES: readonly CursorUsageFixtureDescriptor[] = [
+  {
+    id: "hook-status-change-usage",
+    source: "quasi-real",
+    description: "StatusChange payload can carry usage, context window, and rate-limit fields",
+    payload: hookStatusChangeUsage,
+    expectation: {
+      agent: "cursor",
+      sessionId: "cursor-usage-1",
+      updatedAt: 123,
+      tokens: {
+        input: 1200,
+        output: 200,
+        total: 1400,
+      },
+      context: {
+        used: 1400,
+        max: 32000,
+        percent: 4.375,
+      },
+      rateLimit: {
+        usedPercent: 12.5,
+        resetAt: 999,
+        windowLabel: "60m",
+        planType: "pro",
       },
     },
   },

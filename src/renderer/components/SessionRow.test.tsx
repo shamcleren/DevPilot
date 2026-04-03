@@ -34,19 +34,20 @@ describe("SessionRow pending action", () => {
               id: "a1",
               type: "approval",
               title: "Proceed?",
-              options: ["Yes", "No"],
+              options: ["Approve", "Reject"],
             },
           ],
         })}
         expanded
+        showExperimentalControls
         onToggleExpanded={vi.fn()}
         onRespond={onRespond}
       />,
     );
     expect(html).toContain("Proceed?");
     expect(html).toContain("Awaiting decision");
-    expect(html).toContain(">Yes<");
-    expect(html).toContain(">No<");
+    expect(html).toContain(">Allow<");
+    expect(html).toContain(">Deny<");
   });
 
   it("renders two pending action cards with buttons when pendingActions has two items", () => {
@@ -69,14 +70,15 @@ describe("SessionRow pending action", () => {
           ],
         })}
         expanded
+        showExperimentalControls
         onToggleExpanded={vi.fn()}
         onRespond={vi.fn()}
       />,
     );
     expect(html).toContain("First decision");
     expect(html).toContain("Second decision");
-    expect(html).toContain(">OK<");
-    expect(html).toContain(">Cancel<");
+    expect(html).toContain(">Allow<");
+    expect(html).toContain(">Deny<");
     expect(html).toContain(">A<");
     expect(html).toContain(">B<");
     const cards = html.match(/class="pending-action"/g);
@@ -133,6 +135,7 @@ describe("SessionRow pending action", () => {
           hoverSummary: "scan repo",
         })}
         expanded
+        showExperimentalControls
         onToggleExpanded={vi.fn()}
         onRespond={vi.fn()}
       />,
@@ -140,7 +143,7 @@ describe("SessionRow pending action", () => {
 
     expect(html).toContain("session-stream");
     expect(html).not.toContain("session-row__interaction");
-    expect(html).toContain("session-stream__artifact-eyebrow");
+    expect(html).toContain("session-stream__artifact-kicker");
     expect(html).toContain("Tool call: Bash");
     expect(html).toContain(
       "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
@@ -148,7 +151,7 @@ describe("SessionRow pending action", () => {
     expect(html).toContain("session-stream__item--artifact-call");
   });
 
-  it("renders the control-deck collapsed summary line", () => {
+  it("renders the collapsed summary line", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
@@ -233,6 +236,7 @@ describe("SessionRow pending action", () => {
           ],
         })}
         expanded
+        showExperimentalControls
         onToggleExpanded={vi.fn()}
         onRespond={vi.fn()}
       />,
@@ -240,6 +244,31 @@ describe("SessionRow pending action", () => {
 
     expect(html).toContain("session-row__details");
     expect(html).toContain("Proceed?");
+  });
+
+  it("hides pending action UI in dashboard mode even when pending actions exist", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          pendingActions: [
+            {
+              id: "a1",
+              type: "approval",
+              title: "Proceed?",
+              options: ["Approve", "Reject"],
+            },
+          ],
+        })}
+        expanded
+        showExperimentalControls={false}
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).not.toContain("Awaiting decision");
+    expect(html).not.toContain(">Allow<");
+    expect(html).not.toContain("session-row__interaction");
   });
 
   it("renders inline code and external-style markdown links inside assistant messages", () => {
@@ -565,7 +594,7 @@ describe("SessionRow pending action", () => {
     expect(html).not.toContain("session-row__interaction");
     expect(html).toContain("session-row__overview-artifact");
     expect(html).toContain("session-stream__item--artifact-active");
-    expect(html).toContain("session-stream__artifact-eyebrow");
+    expect(html).toContain("session-stream__artifact-kicker");
     expect(html).toContain("session-stream__item--artifact-call");
   });
 
@@ -626,8 +655,8 @@ describe("SessionRow pending action", () => {
     expect(html).toContain("session-stream__artifact-toggle");
     expect(html).toContain("展开");
     expect(html).toContain("session-stream__artifact-body-shell");
-    expect(html).toContain("session-stream__artifact-body--collapsed");
-    expect(html).toContain("session-stream__plaintext");
+    expect(html).toContain("session-stream__artifact-summary");
+    expect(html).not.toContain("session-stream__plaintext");
   });
 
   it("renders tool artifacts as plain text instead of markdown blocks", () => {
@@ -655,10 +684,9 @@ describe("SessionRow pending action", () => {
       />,
     );
 
-    expect(html).toContain("session-stream__plaintext");
-    expect(html).toContain("session-stream__plaintext--diff");
-    expect(html).toContain("session-stream__plaintext-line--meta");
-    expect(html).toContain("session-stream__plaintext-line--remove");
+    expect(html).toContain("session-stream__artifact-summary");
+    expect(html).toContain("diff --git a/README.md b/README.md");
+    expect(html).not.toContain("session-stream__plaintext--diff");
     expect(html).not.toContain("session-stream__richtext");
     expect(html).not.toContain("session-stream__strong");
   });
@@ -688,7 +716,7 @@ describe("SessionRow pending action", () => {
       />,
     );
 
-    expect(html).toContain("session-stream__plaintext--json");
+    expect(html).toContain("session-stream__artifact-summary");
     expect(html).toContain("&quot;status&quot;: &quot;ok&quot;");
   });
 

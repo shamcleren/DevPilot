@@ -265,4 +265,23 @@ describe("sessionRecordToRow", () => {
     expect(row.collapsedSummary).toBe("正在读取…");
     expect(row.hoverSummary).toBe("正在读取…");
   });
+
+  it("does not surface low-signal hook event names as title or collapsed summary", () => {
+    const row = sessionRecordToRow({
+      id: "cursor-hook-noise",
+      tool: "cursor",
+      status: "completed",
+      title: "UserPromptSubmit",
+      task: "Stop",
+      updatedAt: 1_700_000_000_000,
+      activities: [
+        "UserPromptSubmit",
+        "Stop",
+        "Agent: 已经完成额度展示收口。",
+      ],
+    });
+
+    expect(row.titleLabel).toBe("已经完成额度展示收口。");
+    expect(row.collapsedSummary).toBe("已经完成额度展示收口。");
+  });
 });

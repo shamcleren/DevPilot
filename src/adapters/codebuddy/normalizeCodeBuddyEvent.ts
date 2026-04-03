@@ -1,4 +1,5 @@
 import type { StatusChangeUpstreamEvent } from "../shared/eventEnvelope";
+import type { ActivityItem } from "../../shared/sessionTypes";
 
 function firstString(
   payload: Record<string, unknown>,
@@ -9,6 +10,39 @@ function firstString(
     if (typeof value === "string" && value.trim()) {
       return value;
     }
+  }
+  return undefined;
+}
+
+function firstNestedText(
+  value: unknown,
+  preferredKeys: readonly string[],
+  depth = 0,
+): string | undefined {
+  if (depth > 2 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = firstNestedText(item, preferredKeys, depth + 1);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  if (typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of preferredKeys) {
+    const nested = firstNestedText(record[key], preferredKeys, depth + 1);
+    if (nested) return nested;
   }
   return undefined;
 }
@@ -95,16 +129,126 @@ function pickMeta(
   return Object.fromEntries(metaEntries);
 }
 
+function pickToolInvocationBody(payload: Record<string, unknown>): string | undefined {
+  return (
+    firstString(payload, ["command", "command_line", "tool_input"]) ??
+    firstNestedText(payload.tool_input, [
+      "file_path",
+      "path",
+      "uri",
+      "url",
+      "command",
+      "query",
+      "prompt",
+    ])
+  );
+}
+
+function buildActivityItems(
+  payload: Record<string, unknown>,
+  status: string,
+  task: string | undefined,
+): ActivityItem[] | undefined {
+  const timestamp = pickTimestamp(payload);
+  const hookEventName = firstString(payload, ["hook_event_name"]);
+  const notificationType = firstString(payload, ["notification_type"]);
+  const toolName = firstString(payload, ["tool_name"]);
+
+  if (hookEventName === "UserPromptSubmit" && task) {
+    return [
+      {
+        id: `codebuddy:${timestamp}:user-message`,
+        kind: "message",
+        source: "user",
+        title: "User",
+        body: task,
+        timestamp,
+      },
+    ];
+  }
+
+  if (hookEventName === "PreToolUse" && toolName) {
+    return [
+      {
+        id: `codebuddy:${timestamp}:tool:${toolName}`,
+        kind: "tool",
+        source: "tool",
+        title: toolName,
+        body: pickToolInvocationBody(payload) ?? task ?? toolName,
+        timestamp,
+        toolName,
+        toolPhase: "call",
+      },
+    ];
+  }
+
+  if (hookEventName === "Notification") {
+    return [
+      {
+        id: `codebuddy:${timestamp}:notification`,
+        kind: "note",
+        source: "system",
+        title: "Notification",
+        body: task ?? notificationType ?? "Waiting",
+        timestamp,
+        tone: "waiting",
+        meta: notificationType ? { notificationType } : undefined,
+      },
+    ];
+  }
+
+  if (hookEventName === "SessionStart" || hookEventName === "SessionEnd" || hookEventName === "Stop") {
+    return [
+      {
+        id: `codebuddy:${timestamp}:${hookEventName?.toLowerCase() ?? "session"}`,
+        kind: "system",
+        source: "system",
+        title: hookEventName ?? "Session",
+        body: task ?? hookEventName ?? status,
+        timestamp,
+        tone: status === "offline" ? "system" : undefined,
+      },
+    ];
+  }
+
+  if (task) {
+    return [
+      {
+        id: `codebuddy:${timestamp}:status`,
+        kind: "note",
+        source: "system",
+        title: status.charAt(0).toUpperCase() + status.slice(1),
+        body: task,
+        timestamp,
+        tone:
+          status === "running" ||
+          status === "completed" ||
+          status === "waiting" ||
+          status === "idle" ||
+          status === "error"
+            ? status
+            : "system",
+      },
+    ];
+  }
+
+  return undefined;
+}
+
 export function normalizeCodeBuddyEvent(
   payload: Record<string, unknown>,
 ): StatusChangeUpstreamEvent {
+  const status = pickStatus(payload);
+  const task = pickTask(payload);
+  const activityItems = buildActivityItems(payload, status, task);
   return {
     type: "status_change",
     sessionId: pickSessionId(payload),
     tool: "codebuddy",
-    status: pickStatus(payload),
-    task: pickTask(payload),
+    status,
+    task,
     timestamp: pickTimestamp(payload),
     meta: pickMeta(payload),
+    ...(activityItems ? { activityItems } : {}),
   };
 }

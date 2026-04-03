@@ -1,9 +1,14 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
+  CursorDashboardConnectResult,
+  CursorDashboardDiagnostics,
+} from "../../shared/cursorDashboardTypes";
+import type {
   IntegrationDiagnostics,
   IntegrationInstallResult,
 } from "../../shared/integrationTypes";
 import type { SessionRecord } from "../../shared/sessionTypes";
+import type { UsageOverview } from "../../shared/usageTypes";
 
 contextBridge.exposeInMainWorld("codepal", {
   version: "0.1.0",
@@ -23,15 +28,46 @@ contextBridge.exposeInMainWorld("codepal", {
       ipcRenderer.removeListener(channel, listener);
     };
   },
+  getUsageOverview() {
+    return ipcRenderer.invoke("codepal:get-usage-overview") as Promise<UsageOverview>;
+  },
+  onUsageOverview(handler: (overview: UsageOverview) => void) {
+    const channel = "codepal:usage-overview";
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      overview: UsageOverview,
+    ) => {
+      handler(overview);
+    };
+    ipcRenderer.on(channel, listener);
+    return () => {
+      ipcRenderer.removeListener(channel, listener);
+    };
+  },
   getIntegrationDiagnostics() {
     return ipcRenderer.invoke(
       "codepal:get-integration-diagnostics",
     ) as Promise<IntegrationDiagnostics>;
   },
-  installIntegrationHooks(agentId: "cursor" | "codebuddy") {
+  installIntegrationHooks(agentId: "cursor" | "codebuddy" | "codex") {
     return ipcRenderer.invoke("codepal:install-integration-hooks", {
       agentId,
     }) as Promise<IntegrationInstallResult>;
+  },
+  getCursorDashboardDiagnostics() {
+    return ipcRenderer.invoke(
+      "codepal:get-cursor-dashboard-diagnostics",
+    ) as Promise<CursorDashboardDiagnostics>;
+  },
+  connectCursorDashboard() {
+    return ipcRenderer.invoke(
+      "codepal:connect-cursor-dashboard",
+    ) as Promise<CursorDashboardConnectResult>;
+  },
+  refreshCursorDashboardUsage() {
+    return ipcRenderer.invoke(
+      "codepal:refresh-cursor-dashboard-usage",
+    ) as Promise<CursorDashboardConnectResult>;
   },
   onOpenSettings(handler: () => void) {
     const channel = "codepal:open-settings";

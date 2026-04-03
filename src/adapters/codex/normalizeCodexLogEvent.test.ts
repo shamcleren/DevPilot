@@ -336,6 +336,7 @@ describe("normalizeCodexLogEvent", () => {
         type: "response_item",
         payload: {
           type: "function_call",
+          call_id: "call_123",
           name: "shell",
           arguments: "{\"command\":\"npm test -- src/adapters/codex/normalizeCodexLogEvent.test.ts\"}",
         },
@@ -356,6 +357,9 @@ describe("normalizeCodexLogEvent", () => {
           toolName: "shell",
           toolPhase: "call",
           body: "{\"command\":\"npm test -- src/adapters/codex/normalizeCodexLogEvent.test.ts\"}",
+          meta: {
+            callId: "call_123",
+          },
         },
       ],
       meta: {
@@ -423,6 +427,9 @@ describe("normalizeCodexLogEvent", () => {
           toolName: "Tool",
           toolPhase: "result",
           body: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+          meta: {
+            callId: "call_123",
+          },
         },
       ],
       meta: {

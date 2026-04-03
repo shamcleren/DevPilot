@@ -168,7 +168,12 @@ describe("runBlockingHookFromRaw", () => {
           if (payload.responseTarget) {
             const transport = createActionResponseTransportFromResponseTarget(payload.responseTarget);
             await transport.send(
-              buildActionResponseLine(payload.sessionId, payload.pendingAction.id, "YES"),
+              buildActionResponseLine(
+                payload.sessionId,
+                payload.pendingAction.id,
+                "Allow",
+                "approval",
+              ),
             );
           }
         })();
@@ -194,7 +199,7 @@ describe("runBlockingHookFromRaw", () => {
           id: "pa-1",
           type: "approval",
           title: "Confirm?",
-          options: ["YES", "NO"],
+          options: ["Allow", "Deny"],
         },
       });
 
@@ -206,7 +211,7 @@ describe("runBlockingHookFromRaw", () => {
       };
 
       const line = await runBlockingHookFromRaw(payload, env);
-      expect(line).toBe(buildActionResponseLine("sess-block", "pa-1", "YES"));
+      expect(line).toBe(buildActionResponseLine("sess-block", "pa-1", "Allow", "approval"));
       expect(onMessage).toHaveBeenCalledTimes(1);
       const sent = onMessage.mock.calls[0][0] as string;
       const parsed = JSON.parse(sent) as { responseTarget: { socketPath: string } };
@@ -244,7 +249,7 @@ describe("runBlockingHookFromRaw", () => {
           id: "pa-send-fail",
           type: "approval",
           title: "Confirm?",
-          options: ["YES", "NO"],
+          options: ["Allow", "Deny"],
         },
       });
 

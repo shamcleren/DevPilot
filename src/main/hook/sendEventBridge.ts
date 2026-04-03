@@ -1,12 +1,14 @@
 import net from "node:net";
 import { stringifyActionResponsePayload } from "../../shared/actionResponsePayload";
+import type { PendingActionType } from "../../shared/sessionTypes";
 
 export function buildActionResponseLine(
   sessionId: string,
   actionId: string,
   option: string,
+  actionType: PendingActionType = "single_choice",
 ): string {
-  return stringifyActionResponsePayload(sessionId, actionId, option);
+  return stringifyActionResponsePayload(sessionId, actionId, option, actionType);
 }
 
 function sendLine(client: net.Socket, body: string): Promise<void> {
