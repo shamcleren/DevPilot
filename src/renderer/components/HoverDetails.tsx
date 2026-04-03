@@ -9,6 +9,16 @@ type HoverDetailsProps = {
   sessionStatus: SessionStatus;
 };
 
+type DirectiveChip = {
+  id: string;
+  label: string;
+};
+
+type ParsedAssistantBody = {
+  cleanedText: string;
+  chips: DirectiveChip[];
+};
+
 function extractCodeText(node: unknown): string {
   if (typeof node === "string") return node;
   if (Array.isArray(node)) return node.map((item) => extractCodeText(item)).join("");
@@ -89,8 +99,86 @@ function isExternalTarget(href: string): boolean {
   return href.startsWith("/") || /^[.]{1,2}\//.test(href) || /^[A-Za-z0-9_-]+\//.test(href);
 }
 
+function readDirectiveAttribute(source: string, name: string): string | null {
+  const pattern = new RegExp(`${name}="([^"]+)"`);
+  const match = source.match(pattern);
+  return match?.[1] ?? null;
+}
+
+function normalizeDirectiveName(name: string): string {
+  return name.replace(/[-_]+/g, " ").trim().toLowerCase();
+}
+
+function toDirectiveChip(name: string, payload: string, index: number): DirectiveChip {
+  switch (name) {
+    case "git-stage":
+      return { id: `directive-${index}`, label: "已暂存" };
+    case "git-commit":
+      return { id: `directive-${index}`, label: "已提交" };
+    case "git-push": {
+      const branch = readDirectiveAttribute(payload, "branch");
+      return { id: `directive-${index}`, label: branch ? `已推送 ${branch}` : "已推送" };
+    }
+    case "git-create-branch": {
+      const branch = readDirectiveAttribute(payload, "branch");
+      return {
+        id: `directive-${index}`,
+        label: branch ? `已创建分支 ${branch}` : "已创建分支",
+      };
+    }
+    case "git-create-pr":
+      return { id: `directive-${index}`, label: "已创建 PR" };
+    case "code-comment":
+      return { id: `directive-${index}`, label: "已添加评论" };
+    case "archive":
+      return { id: `directive-${index}`, label: "已归档" };
+    case "automation-update": {
+      const mode = readDirectiveAttribute(payload, "mode");
+      if (mode === "suggested create") {
+        return { id: `directive-${index}`, label: "建议自动化" };
+      }
+      if (mode === "suggested update") {
+        return { id: `directive-${index}`, label: "建议更新自动化" };
+      }
+      if (mode === "view") {
+        return { id: `directive-${index}`, label: "查看自动化" };
+      }
+      return { id: `directive-${index}`, label: "自动化已更新" };
+    }
+    default:
+      return { id: `directive-${index}`, label: normalizeDirectiveName(name) };
+  }
+}
+
+function parseAssistantBody(text: string): ParsedAssistantBody {
+  const matches = [...text.matchAll(/::([a-z0-9_-]+)\{([^{}]*)\}/gi)];
+  if (matches.length === 0) {
+    return { cleanedText: text, chips: [] };
+  }
+
+  const chips: DirectiveChip[] = [];
+  let cleanedText = text;
+
+  for (const [index, match] of matches.entries()) {
+    const fullMatch = match[0];
+    const directiveName = match[1] ?? "";
+    const payload = match[2] ?? "";
+    const chip = toDirectiveChip(directiveName, payload, index);
+
+    chips.push(chip);
+    cleanedText = cleanedText.replace(fullMatch, "");
+  }
+
+  return {
+    cleanedText: cleanedText.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim(),
+    chips,
+  };
+}
+
 function RichTextBlock({ text }: { text: string }) {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const { cleanedText, chips } = parseAssistantBody(text);
+  const hasMarkdownBody = cleanedText.trim().length > 0;
 
   async function copyCodeBlock(code: string) {
     setCopiedCode(code);
@@ -110,76 +198,87 @@ function RichTextBlock({ text }: { text: string }) {
 
   return (
     <div className="session-stream__richtext">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, children }) => {
-            const target = typeof href === "string" ? href : "";
-            if (!isExternalTarget(target)) {
-              return <>{children}</>;
-            }
-            return (
-              <a
-                className="session-stream__link"
-                href={target}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(event) => {
-                  event.preventDefault();
-                  void window.codepal.openExternalTarget(target);
-                }}
-              >
-                {children}
-              </a>
-            );
-          },
-          code: ({ className, children }) => {
-            const isBlockCode = typeof className === "string" && className.includes("language-");
-            return (
-              <code
-                className={[
-                  isBlockCode ? "session-stream__codeblock-code" : "session-stream__code",
-                  className,
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {children}
-              </code>
-            );
-          },
-          pre: ({ children }) => {
-            const codeText = extractCodeText(children).replace(/\n$/, "");
-            const copied = copiedCode === codeText;
-            return (
-              <div className="session-stream__codeblock-shell">
-                <div className="session-stream__codeblock-toolbar">
-                  <button
-                    type="button"
-                    className="session-stream__codeblock-copy"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      void copyCodeBlock(codeText);
-                    }}
-                  >
-                    {copied ? "已复制" : "复制"}
-                  </button>
+      {hasMarkdownBody ? (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ href, children }) => {
+              const target = typeof href === "string" ? href : "";
+              if (!isExternalTarget(target)) {
+                return <>{children}</>;
+              }
+              return (
+                <a
+                  className="session-stream__link"
+                  href={target}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void window.codepal.openExternalTarget(target);
+                  }}
+                >
+                  {children}
+                </a>
+              );
+            },
+            code: ({ className, children }) => {
+              const isBlockCode = typeof className === "string" && className.includes("language-");
+              return (
+                <code
+                  className={[
+                    isBlockCode ? "session-stream__codeblock-code" : "session-stream__code",
+                    className,
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {children}
+                </code>
+              );
+            },
+            pre: ({ children }) => {
+              const codeText = extractCodeText(children).replace(/\n$/, "");
+              const copied = copiedCode === codeText;
+              return (
+                <div className="session-stream__codeblock-shell">
+                  <div className="session-stream__codeblock-toolbar">
+                    <button
+                      type="button"
+                      className="session-stream__codeblock-copy"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        void copyCodeBlock(codeText);
+                      }}
+                    >
+                      {copied ? "已复制" : "复制"}
+                    </button>
+                  </div>
+                  <div className="session-stream__codeblock-content">
+                    <pre className="session-stream__codeblock">{children}</pre>
+                  </div>
                 </div>
-                <div className="session-stream__codeblock-content">
-                  <pre className="session-stream__codeblock">{children}</pre>
-                </div>
-              </div>
-            );
-          },
-          p: ({ children }) => <p>{children}</p>,
-          ul: ({ children }) => <ul className="session-stream__list">{children}</ul>,
-          strong: ({ children }) => <strong className="session-stream__strong">{children}</strong>,
-          em: ({ children }) => <em className="session-stream__em">{children}</em>,
-        }}
-      >
-        {text}
-      </ReactMarkdown>
+              );
+            },
+            p: ({ children }) => <p>{children}</p>,
+            ul: ({ children }) => <ul className="session-stream__list">{children}</ul>,
+            strong: ({ children }) => <strong className="session-stream__strong">{children}</strong>,
+            em: ({ children }) => <em className="session-stream__em">{children}</em>,
+          }}
+        >
+          {cleanedText}
+        </ReactMarkdown>
+      ) : null}
+      {chips.length > 0 ? (
+        <div className="session-stream__directive-chips" aria-label="Git actions">
+          {chips.map((chip) => (
+            <span key={chip.id} className="session-stream__directive-chip">
+              {chip.label}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

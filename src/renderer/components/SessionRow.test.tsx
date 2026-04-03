@@ -305,6 +305,154 @@ describe("SessionRow pending action", () => {
     expect(html).toContain("session-stream__codeblock-code language-text");
   });
 
+  it("renders known git directives as lightweight chips under assistant prose", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "git-directive-1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body:
+                "已提交并推送到 `origin/main`。\n\n::git-stage{cwd=\"/Users/demo/CodePal\"} ::git-commit{cwd=\"/Users/demo/CodePal\"} ::git-push{cwd=\"/Users/demo/CodePal\" branch=\"main\"}",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("已提交并推送到");
+    expect(html).toContain("session-stream__directive-chips");
+    expect(html).toContain("session-stream__directive-chip");
+    expect(html).toContain("已暂存");
+    expect(html).toContain("已提交");
+    expect(html).toContain("已推送 main");
+    expect(html).not.toContain("::git-stage");
+    expect(html).not.toContain("::git-commit");
+    expect(html).not.toContain("::git-push");
+  });
+
+  it("renders directive-only assistant messages without an empty prose block", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "git-directive-only",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body:
+                "::git-stage{cwd=\"/Users/demo/CodePal\"}\n::git-push{cwd=\"/Users/demo/CodePal\" branch=\"main\"}",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__directive-chips");
+    expect(html).toContain("已暂存");
+    expect(html).toContain("已推送 main");
+    expect(html).not.toContain("<p></p>");
+  });
+
+  it("renders unknown directives as generic fallback chips", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "unknown-directive-1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body: "保留摘要。\n\n::sync_status{state=\"ok\"}",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("保留摘要");
+    expect(html).toContain("session-stream__directive-chips");
+    expect(html).toContain("sync status");
+    expect(html).not.toContain("::sync_status");
+  });
+
+  it("renders known non-git directives with explicit labels", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "known-directive-2",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body:
+                "::git-create-branch{branch=\"codex/directive-ui\"} ::git-create-pr{url=\"https://example.test/pr/1\"} ::code-comment{file=\"/tmp/demo.ts\"} ::archive{reason=\"done\"}",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("已创建分支 codex/directive-ui");
+    expect(html).toContain("已创建 PR");
+    expect(html).toContain("已添加评论");
+    expect(html).toContain("已归档");
+  });
+
+  it("renders automation-update directives with mode-aware labels", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "automation-directive-1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body:
+                "::automation-update{mode=\"suggested create\" name=\"Daily report\"} ::automation-update{mode=\"suggested update\" id=\"123\"} ::automation-update{mode=\"view\" id=\"456\"}",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("建议自动化");
+    expect(html).toContain("建议更新自动化");
+    expect(html).toContain("查看自动化");
+  });
+
   it("shows a typing indicator as the last inline message while a running session already has visible content", () => {
     const html = renderToStaticMarkup(
       <SessionRow
