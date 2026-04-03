@@ -174,6 +174,7 @@ export interface SessionRecord {
   title?: string;
   task?: string;
   updatedAt: number;
+  lastUserMessageAt?: number;
   activityItems?: ActivityItem[];
   activities?: string[];
   pendingActions?: PendingAction[];

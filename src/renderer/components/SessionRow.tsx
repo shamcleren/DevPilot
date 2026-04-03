@@ -136,7 +136,9 @@ export function SessionRow({ session, expanded, onToggleExpanded, onRespond }: S
   }
 
   return (
-    <article className={`session-row ${expanded ? "session-row--expanded" : ""}`}>
+    <article
+      className={`session-row session-row--${session.status} ${expanded ? "session-row--expanded" : ""}`}
+    >
       <button
         type="button"
         className="session-row__summary"

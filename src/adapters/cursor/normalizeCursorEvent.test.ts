@@ -1,5 +1,23 @@
 import { expect, it } from "vitest";
+import { CURSOR_FIXTURES } from "../../../tests/fixtures/cursor";
 import { normalizeCursorEvent } from "./normalizeCursorEvent";
+
+it.each(CURSOR_FIXTURES)("normalizes cursor fixture $id", ({ payload, expectation }) => {
+  const event = normalizeCursorEvent(payload);
+
+  expect(event).toMatchObject({
+    type: "status_change",
+    sessionId: expectation.sessionId,
+    tool: "cursor",
+    status: expectation.status,
+    ...(expectation.task !== undefined ? { task: expectation.task } : {}),
+    activityItems: expectation.activityItems,
+  });
+
+  if (expectation.meta) {
+    expect(event?.meta).toEqual(expect.objectContaining(expectation.meta));
+  }
+});
 
 it("normalizes a status change payload", () => {
   const event = normalizeCursorEvent({
@@ -98,6 +116,57 @@ it("keeps supported pending actions on raw cursor payloads", () => {
         source: "system",
         title: "Notification",
         body: "Waiting",
+        tone: "waiting",
+      },
+    ],
+  });
+});
+
+it("maps permission_prompt notifications to waiting state with the prompt body", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "Notification",
+      session_id: "cursor-notify-1",
+      notification_type: "permission_prompt",
+      message: "Cursor needs permission to run Bash",
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-notify-1",
+    status: "waiting",
+    task: "Cursor needs permission to run Bash",
+    activityItems: [
+      {
+        kind: "note",
+        source: "system",
+        title: "Notification",
+        body: "Cursor needs permission to run Bash",
+        tone: "waiting",
+        meta: {
+          notificationType: "permission_prompt",
+        },
+      },
+    ],
+  });
+});
+
+it("maps idle_prompt notifications to idle state instead of waiting", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "Notification",
+      session_id: "cursor-notify-2",
+      notification_type: "idle_prompt",
+      message: "Cursor has been idle for 60 seconds",
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-notify-2",
+    status: "idle",
+    task: "Cursor has been idle for 60 seconds",
+    activityItems: [
+      {
+        kind: "note",
+        source: "system",
+        title: "Notification",
+        body: "Cursor has been idle for 60 seconds",
         tone: "waiting",
       },
     ],
@@ -237,6 +306,160 @@ it("maps beforeShellExecution into a tool call activity", () => {
         toolName: "Bash",
         toolPhase: "call",
         body: "npm test -- --runInBand",
+      },
+    ],
+  });
+});
+
+it("maps beforeReadFile into a tool call activity with the file path from structured input", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "beforeReadFile",
+      session_id: "cursor-raw-6b",
+      tool_name: "Read",
+      tool_input: {
+        file_path: "src/renderer/App.tsx",
+      },
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-raw-6b",
+    status: "running",
+    activityItems: [
+      {
+        kind: "tool",
+        source: "tool",
+        title: "Read",
+        toolName: "Read",
+        toolPhase: "call",
+        body: "src/renderer/App.tsx",
+      },
+    ],
+  });
+});
+
+it("maps afterMCPExecution into a tool result activity with output text", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "afterMCPExecution",
+      session_id: "cursor-raw-6c",
+      tool_name: "fetch_docs",
+      output: "Found 3 docs for Electron IPC.",
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-raw-6c",
+    status: "running",
+    activityItems: [
+      {
+        kind: "tool",
+        source: "tool",
+        title: "fetch_docs",
+        toolName: "fetch_docs",
+        toolPhase: "result",
+        body: "Found 3 docs for Electron IPC.",
+      },
+    ],
+  });
+});
+
+it("maps afterMCPExecution into a tool result activity with nested response stderr", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "afterMCPExecution",
+      session_id: "cursor-raw-6c2",
+      tool_name: "fetch_docs",
+      response: {
+        stderr: "read_timeout while fetching docs",
+      },
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-raw-6c2",
+    status: "running",
+    activityItems: [
+      {
+        kind: "tool",
+        source: "tool",
+        title: "fetch_docs",
+        toolName: "fetch_docs",
+        toolPhase: "result",
+        body: "read_timeout while fetching docs",
+      },
+    ],
+  });
+});
+
+it("maps afterShellExecution into a tool result activity with stdout text", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "afterShellExecution",
+      session_id: "cursor-raw-6cc",
+      tool_name: "Bash",
+      stdout: "PASS src/main/ipc/ipcHub.test.ts",
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-raw-6cc",
+    status: "running",
+    activityItems: [
+      {
+        kind: "tool",
+        source: "tool",
+        title: "Bash",
+        toolName: "Bash",
+        toolPhase: "result",
+        body: "PASS src/main/ipc/ipcHub.test.ts",
+      },
+    ],
+  });
+});
+
+it("maps PostToolUse into a tool result activity with nested result text", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "PostToolUse",
+      session_id: "cursor-raw-6d",
+      tool_name: "Edit",
+      result: {
+        output: "Updated src/main/ipc/ipcHub.ts",
+      },
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-raw-6d",
+    status: "running",
+    activityItems: [
+      {
+        kind: "tool",
+        source: "tool",
+        title: "Edit",
+        toolName: "Edit",
+        toolPhase: "result",
+        body: "Updated src/main/ipc/ipcHub.ts",
+      },
+    ],
+  });
+});
+
+it("maps PostToolUse into a tool result activity with nested response result output", () => {
+  expect(
+    normalizeCursorEvent({
+      hook_event_name: "PostToolUse",
+      session_id: "cursor-raw-6dd",
+      tool_name: "Edit",
+      response: {
+        result: {
+          output: "Updated src/renderer/components/HoverDetails.tsx",
+        },
+      },
+    }),
+  ).toMatchObject({
+    sessionId: "cursor-raw-6dd",
+    status: "running",
+    activityItems: [
+      {
+        kind: "tool",
+        source: "tool",
+        title: "Edit",
+        toolName: "Edit",
+        toolPhase: "result",
+        body: "Updated src/renderer/components/HoverDetails.tsx",
       },
     ],
   });

@@ -1,9 +1,22 @@
 import { describe, expect, it } from "vitest";
+import { CODEX_FIXTURES, CODEX_FIXTURE_SOURCE_PATH } from "../../../tests/fixtures/codex";
 import { normalizeCodexLogEvent } from "./normalizeCodexLogEvent";
 
 describe("normalizeCodexLogEvent", () => {
-  const sourcePath =
-    "/Users/demo/.codex/sessions/2026/04/02/rollout-2026-04-02T10-46-14-019d4c15-8d42-78f1-955e-d57f67061b9e.jsonl";
+  const sourcePath = CODEX_FIXTURE_SOURCE_PATH;
+
+  it.each(CODEX_FIXTURES)("normalizes codex fixture $id", ({ entry, expectation }) => {
+    const event = normalizeCodexLogEvent(JSON.stringify(entry), sourcePath);
+
+    expect(event).toMatchObject({
+      sessionId: expectation.sessionId,
+      tool: "codex",
+      status: expectation.status,
+      task: expectation.task,
+      activityItems: expectation.activityItems,
+      meta: expectation.meta,
+    });
+  });
 
   it("maps session_meta to a running Codex session event", () => {
     const event = normalizeCodexLogEvent(
@@ -237,5 +250,220 @@ describe("normalizeCodexLogEvent", () => {
     );
 
     expect(event).toBeNull();
+  });
+
+  it("maps response_item assistant messages into running assistant activity", () => {
+    const event = normalizeCodexLogEvent(
+      JSON.stringify({
+        timestamp: "2026-04-02T08:13:11.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              text: "我先补一组回归测试，再继续收口。",
+            },
+          ],
+        },
+      }),
+      sourcePath,
+    );
+
+    expect(event).toMatchObject({
+      sessionId: "019d4c15-8d42-78f1-955e-d57f67061b9e",
+      tool: "codex",
+      status: "running",
+      task: "我先补一组回归测试，再继续收口。",
+      activityItems: [
+        {
+          kind: "message",
+          source: "assistant",
+          title: "Assistant",
+          body: "我先补一组回归测试，再继续收口。",
+        },
+      ],
+      meta: {
+        event_type: "response_item",
+        item_type: "message",
+        role: "assistant",
+      },
+    });
+  });
+
+  it("maps response_item assistant messages from nested content structures", () => {
+    const event = normalizeCodexLogEvent(
+      JSON.stringify({
+        timestamp: "2026-04-02T08:13:11.500Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "output_text",
+              content: [
+                {
+                  type: "text",
+                  text: "我先补 adapter，再回头清理 renderer。",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      sourcePath,
+    );
+
+    expect(event).toMatchObject({
+      status: "running",
+      task: "我先补 adapter，再回头清理 renderer。",
+      activityItems: [
+        {
+          kind: "message",
+          source: "assistant",
+          body: "我先补 adapter，再回头清理 renderer。",
+        },
+      ],
+    });
+  });
+
+  it("maps response_item function calls into tool call activity", () => {
+    const event = normalizeCodexLogEvent(
+      JSON.stringify({
+        timestamp: "2026-04-02T08:13:12.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "shell",
+          arguments: "{\"command\":\"npm test -- src/adapters/codex/normalizeCodexLogEvent.test.ts\"}",
+        },
+      }),
+      sourcePath,
+    );
+
+    expect(event).toMatchObject({
+      sessionId: "019d4c15-8d42-78f1-955e-d57f67061b9e",
+      tool: "codex",
+      status: "running",
+      task: "shell",
+      activityItems: [
+        {
+          kind: "tool",
+          source: "tool",
+          title: "shell",
+          toolName: "shell",
+          toolPhase: "call",
+          body: "{\"command\":\"npm test -- src/adapters/codex/normalizeCodexLogEvent.test.ts\"}",
+        },
+      ],
+      meta: {
+        event_type: "response_item",
+        item_type: "function_call",
+      },
+    });
+  });
+
+  it("maps response_item function calls with object arguments into tool call activity", () => {
+    const event = normalizeCodexLogEvent(
+      JSON.stringify({
+        timestamp: "2026-04-02T08:13:12.500Z",
+        type: "response_item",
+        payload: {
+          type: "function_call",
+          name: "shell",
+          arguments: {
+            command: "npm test -- src/adapters/codex/normalizeCodexLogEvent.test.ts",
+          },
+        },
+      }),
+      sourcePath,
+    );
+
+    expect(event).toMatchObject({
+      status: "running",
+      task: "shell",
+      activityItems: [
+        {
+          kind: "tool",
+          source: "tool",
+          title: "shell",
+          toolPhase: "call",
+          body: '{\n  "command": "npm test -- src/adapters/codex/normalizeCodexLogEvent.test.ts"\n}',
+        },
+      ],
+    });
+  });
+
+  it("maps response_item function call outputs into tool result activity", () => {
+    const event = normalizeCodexLogEvent(
+      JSON.stringify({
+        timestamp: "2026-04-02T08:13:13.000Z",
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          call_id: "call_123",
+          output: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+        },
+      }),
+      sourcePath,
+    );
+
+    expect(event).toMatchObject({
+      sessionId: "019d4c15-8d42-78f1-955e-d57f67061b9e",
+      tool: "codex",
+      status: "running",
+      task: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+      activityItems: [
+        {
+          kind: "tool",
+          source: "tool",
+          title: "Tool",
+          toolName: "Tool",
+          toolPhase: "result",
+          body: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+        },
+      ],
+      meta: {
+        event_type: "response_item",
+        item_type: "function_call_output",
+      },
+    });
+  });
+
+  it("maps response_item function call outputs with structured output into tool result activity", () => {
+    const event = normalizeCodexLogEvent(
+      JSON.stringify({
+        timestamp: "2026-04-02T08:13:13.500Z",
+        type: "response_item",
+        payload: {
+          type: "function_call_output",
+          name: "shell",
+          output: [
+            {
+              type: "text",
+              text: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+            },
+          ],
+        },
+      }),
+      sourcePath,
+    );
+
+    expect(event).toMatchObject({
+      status: "running",
+      task: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+      activityItems: [
+        {
+          kind: "tool",
+          source: "tool",
+          title: "shell",
+          toolName: "shell",
+          toolPhase: "result",
+          body: "PASS src/adapters/codex/normalizeCodexLogEvent.test.ts",
+        },
+      ],
+    });
   });
 });

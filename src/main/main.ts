@@ -1,4 +1,4 @@
-import { BrowserWindow, Tray, app, ipcMain, shell } from "electron";
+import { BrowserWindow, Tray, app, clipboard, ipcMain, shell } from "electron";
 import fs from "node:fs";
 import { createActionResponseTransport } from "./actionResponse/createActionResponseTransport";
 import { dispatchActionResponse } from "./actionResponse/dispatchActionResponse";
@@ -78,15 +78,26 @@ function wireActionResponseIpc(
     }
     return integrationService.installHooks(agentId);
   });
-  ipcMain.handle("codepal:open-path", async (_event, payload: unknown) => {
-    const pathToOpen =
-      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).path === "string"
-        ? (payload as Record<string, unknown>).path.trim()
+  ipcMain.handle("codepal:open-external-target", async (_event, payload: unknown) => {
+    const targetToOpen =
+      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).target === "string"
+        ? (payload as Record<string, unknown>).target.trim()
         : "";
-    if (!pathToOpen) {
-      throw new Error("path is required");
+    if (!targetToOpen) {
+      throw new Error("target is required");
     }
-    return shell.openPath(pathToOpen);
+    if (/^https?:\/\//i.test(targetToOpen)) {
+      await shell.openExternal(targetToOpen);
+      return "";
+    }
+    return shell.openPath(targetToOpen);
+  });
+  ipcMain.handle("codepal:write-clipboard-text", (_event, payload: unknown) => {
+    const text =
+      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).text === "string"
+        ? (payload as Record<string, unknown>).text
+        : "";
+    clipboard.writeText(text);
   });
   ipcMain.on("codepal:action-response", (_event, payload: unknown) => {
     if (!payload || typeof payload !== "object") return;

@@ -50,6 +50,7 @@ type InternalSessionRecord = {
   title?: string;
   task?: string;
   updatedAt: number;
+  lastUserMessageAt?: number;
   activityItems: ActivityItem[];
   activities: string[];
   pendingById: Map<string, PendingActionRuntimeState>;
@@ -307,6 +308,9 @@ function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
     ...(internal.title ? { title: internal.title } : {}),
     task: internal.task,
     updatedAt: internal.updatedAt,
+    ...(internal.lastUserMessageAt !== undefined
+      ? { lastUserMessageAt: internal.lastUserMessageAt }
+      : {}),
     ...(internal.activityItems.length > 0 ? { activityItems: internal.activityItems } : {}),
     ...(internal.activities.length > 0 ? { activities: internal.activities } : {}),
   };
@@ -321,6 +325,18 @@ function toSessionRecord(internal: InternalSessionRecord): SessionRecord {
 
 function isCurrentStatus(status: SessionStatus): boolean {
   return status === "running" || status === "waiting";
+}
+
+function eventCarriesUserMessage(event: SessionEvent): boolean {
+  if (event.activityItems?.some((item) => item.kind === "message" && item.source === "user")) {
+    return true;
+  }
+
+  return (
+    firstMetaString(event.meta, "codex_event_type") === "user_message" ||
+    firstMetaString(event.meta, "hook_event_name") === "beforeSubmitPrompt" ||
+    firstMetaString(event.meta, "hook_event_name") === "UserPromptSubmit"
+  );
 }
 
 export function createSessionStore() {
@@ -545,6 +561,9 @@ export function createSessionStore() {
         prev?.activityItems,
         event.activityItems ?? buildFallbackActivityItems(event),
       );
+      const nextLastUserMessageAt = eventCarriesUserMessage(event)
+        ? event.timestamp
+        : prev?.lastUserMessageAt;
 
       const internal: InternalSessionRecord = {
         id: event.sessionId,
@@ -553,6 +572,7 @@ export function createSessionStore() {
         title: event.title ?? prev?.title,
         task: event.task,
         updatedAt: event.timestamp,
+        lastUserMessageAt: nextLastUserMessageAt,
         activityItems: nextActivityItems,
         activities: toLegacyActivities(nextActivityItems),
         pendingById: nextPendingById,
@@ -585,7 +605,14 @@ export function createSessionStore() {
 
     getSessions(): SessionRecord[] {
       return [...sessions.values()]
-        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .sort((a, b) => {
+          const aUserTs = a.lastUserMessageAt ?? Number.NEGATIVE_INFINITY;
+          const bUserTs = b.lastUserMessageAt ?? Number.NEGATIVE_INFINITY;
+          if (aUserTs !== bUserTs) {
+            return bUserTs - aUserTs;
+          }
+          return b.updatedAt - a.updatedAt;
+        })
         .map(toSessionRecord);
     },
   };

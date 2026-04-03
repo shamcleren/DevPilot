@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { isValidElement, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { SessionStatus } from "../../shared/sessionTypes";
 import type { TimelineItem } from "../monitorSession";
 
@@ -6,6 +8,15 @@ type HoverDetailsProps = {
   items: TimelineItem[];
   sessionStatus: SessionStatus;
 };
+
+function extractCodeText(node: unknown): string {
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) return node.map((item) => extractCodeText(item)).join("");
+  if (isValidElement<{ children?: unknown }>(node)) {
+    return extractCodeText(node.props.children);
+  }
+  return "";
+}
 
 function noteToneLabel(item: TimelineItem): string {
   switch (item.tone) {
@@ -70,108 +81,175 @@ function messageRole(label: string): "user" | "agent" | "assistant" {
   return "agent";
 }
 
-function isWebHref(href: string): boolean {
-  return /^https?:\/\//i.test(href);
-}
+function isExternalTarget(href: string): boolean {
+  if (/^https?:\/\//i.test(href)) {
+    return true;
+  }
 
-function isFileLikeHref(href: string): boolean {
   return href.startsWith("/") || /^[.]{1,2}\//.test(href) || /^[A-Za-z0-9_-]+\//.test(href);
 }
 
-function renderInlineText(text: string): Array<string | JSX.Element> {
-  const result: Array<string | JSX.Element> = [];
-  const pattern = /\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|(https?:\/\/\S+)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
+function RichTextBlock({ text }: { text: string }) {
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      result.push(text.slice(lastIndex, match.index));
-    }
-
-    const markdownLabel = match[1];
-    const markdownUrl = match[2];
-    const inlineCode = match[3];
-    const rawUrl = match[4];
-
-    if (inlineCode) {
-      result.push(
-        <code key={`code-${match.index}`} className="session-stream__code">
-          {inlineCode}
-        </code>,
-      );
-    } else {
-      const href = markdownUrl ?? rawUrl ?? "";
-      const label = markdownLabel ?? rawUrl ?? href;
-
-      if (isWebHref(href)) {
-        result.push(
-          <a
-            key={`${href}-${match.index}`}
-            className="session-stream__link"
-            href={href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {label}
-          </a>,
-        );
-      } else if (isFileLikeHref(href)) {
-        result.push(
-          <button
-            key={`${href}-${match.index}`}
-            type="button"
-            className="session-stream__file-link"
-            onClick={() => {
-              void window.codepal.openPath(href);
-            }}
-          >
-            {label}
-          </button>,
-        );
+  async function copyCodeBlock(code: string) {
+    setCopiedCode(code);
+    try {
+      await window.codepal.writeClipboardText(code);
+    } catch {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
       } else {
-        result.push(label);
+        throw new Error("clipboard unavailable");
       }
     }
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  if (lastIndex < text.length) {
-    result.push(text.slice(lastIndex));
-  }
-
-  return result;
-}
-
-function RichTextBlock({ text }: { text: string }) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
-  if (lines.length > 1 && bulletLines.length === lines.length) {
-    return (
-      <ul className="session-stream__list">
-        {lines.map((line, index) => (
-          <li key={index}>{renderInlineText(line.replace(/^[-*]\s+/, ""))}</li>
-        ))}
-      </ul>
-    );
-  }
-
-  if (lines.length === 0) {
-    return <div className="session-stream__richtext">{renderInlineText(text)}</div>;
+    window.setTimeout(() => {
+      setCopiedCode((current) => (current === code ? null : current));
+    }, 1200);
   }
 
   return (
     <div className="session-stream__richtext">
-      {lines.map((line, index) => (
-        <p key={index}>{renderInlineText(line)}</p>
-      ))}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ href, children }) => {
+            const target = typeof href === "string" ? href : "";
+            if (!isExternalTarget(target)) {
+              return <>{children}</>;
+            }
+            return (
+              <a
+                className="session-stream__link"
+                href={target}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => {
+                  event.preventDefault();
+                  void window.codepal.openExternalTarget(target);
+                }}
+              >
+                {children}
+              </a>
+            );
+          },
+          code: ({ className, children }) => {
+            const isBlockCode = typeof className === "string" && className.includes("language-");
+            return (
+              <code
+                className={[
+                  isBlockCode ? "session-stream__codeblock-code" : "session-stream__code",
+                  className,
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                {children}
+              </code>
+            );
+          },
+          pre: ({ children }) => {
+            const codeText = extractCodeText(children).replace(/\n$/, "");
+            const copied = copiedCode === codeText;
+            return (
+              <div className="session-stream__codeblock-shell">
+                <div className="session-stream__codeblock-toolbar">
+                  <button
+                    type="button"
+                    className="session-stream__codeblock-copy"
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      void copyCodeBlock(codeText);
+                    }}
+                  >
+                    {copied ? "已复制" : "复制"}
+                  </button>
+                </div>
+                <div className="session-stream__codeblock-content">
+                  <pre className="session-stream__codeblock">{children}</pre>
+                </div>
+              </div>
+            );
+          },
+          p: ({ children }) => <p>{children}</p>,
+          ul: ({ children }) => <ul className="session-stream__list">{children}</ul>,
+          strong: ({ children }) => <strong className="session-stream__strong">{children}</strong>,
+          em: ({ children }) => <em className="session-stream__em">{children}</em>,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
     </div>
   );
+}
+
+function looksLikeDiff(text: string): boolean {
+  const normalized = text.trimStart();
+  return (
+    normalized.startsWith("diff --git ") ||
+    normalized.startsWith("--- ") ||
+    normalized.startsWith("+++ ") ||
+    normalized.includes("\n@@ ") ||
+    normalized.includes("\nindex ")
+  );
+}
+
+function normalizeJsonText(text: string): string | null {
+  const trimmed = text.trim();
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return null;
+  }
+}
+
+function diffLineClass(line: string): string {
+  if (line.startsWith("diff --git ") || line.startsWith("index ") || line.startsWith("+++ ") || line.startsWith("--- ")) {
+    return "session-stream__plaintext-line--meta";
+  }
+  if (line.startsWith("@@")) {
+    return "session-stream__plaintext-line--hunk";
+  }
+  if (line.startsWith("+")) {
+    return "session-stream__plaintext-line--add";
+  }
+  if (line.startsWith("-")) {
+    return "session-stream__plaintext-line--remove";
+  }
+  return "session-stream__plaintext-line--plain";
+}
+
+function ToolTextBlock({ text }: { text: string }) {
+  if (looksLikeDiff(text)) {
+    return (
+      <div className="session-stream__plaintext session-stream__plaintext--diff">
+        {text.split("\n").map((line, index) => (
+          <span
+            key={`${index}:${line}`}
+            className={`session-stream__plaintext-line ${diffLineClass(line)}`}
+          >
+            {line || " "}
+          </span>
+        ))}
+      </div>
+    );
+  }
+
+  const formattedJson = normalizeJsonText(text);
+  if (formattedJson) {
+    return (
+      <pre className="session-stream__plaintext session-stream__plaintext--json">
+        {formattedJson}
+      </pre>
+    );
+  }
+
+  return <pre className="session-stream__plaintext session-stream__plaintext--log">{text}</pre>;
 }
 
 export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
@@ -190,6 +268,21 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
     }));
   }
 
+  const renderedPrimaryItems = showTypingIndicator
+    ? [
+        ...primaryItems,
+        {
+          id: "session-stream-typing-indicator",
+          kind: "message" as const,
+          source: "assistant" as const,
+          label: "Assistant",
+          title: "Assistant",
+          body: "正在整理回复",
+          timestamp: Number.MAX_SAFE_INTEGER,
+        },
+      ]
+    : primaryItems;
+
   return (
     <div className="session-stream" role="region" aria-label="Session activity stream">
       {items.length === 0 ? (
@@ -197,18 +290,28 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
       ) : (
         <>
           <div className="session-stream__section session-stream__section--primary">
-            {primaryItems.map((item, index) => {
+            {renderedPrimaryItems.map((item, index) => {
               if (item.kind === "message") {
+                const isTypingItem = item.id === "session-stream-typing-indicator";
                 return (
                   <div
                     key={item.id}
-                    className={`session-stream__item session-stream__item--message session-stream__item--message-${messageRole(item.label)}`}
+                    className={`session-stream__item session-stream__item--message session-stream__item--message-${messageRole(item.label)} ${
+                      isTypingItem ? "session-stream__item--typing" : ""
+                    }`}
                   >
                     <div className="session-stream__header">
                       <span className="session-stream__label">{item.label}</span>
                     </div>
                     <div className="session-stream__body">
-                      <RichTextBlock text={item.body} />
+                      {isTypingItem ? (
+                        <div className="session-stream__typing-indicator" aria-label="Agent 正在输入">
+                          <span className="session-stream__typing-text">正在整理回复</span>
+                          <span className="session-stream__typing-dots" aria-hidden="true" />
+                        </div>
+                      ) : (
+                        <RichTextBlock text={item.body} />
+                      )}
                     </div>
                   </div>
                 );
@@ -219,10 +322,14 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
                 sessionStatus === "running" &&
                 !primaryItems.slice(0, index).some((entry) => entry.kind === "tool");
 
+              const artifactPhaseClass = item.toolPhase
+                ? `session-stream__item--artifact-${item.toolPhase.toLowerCase()}`
+                : "";
+
               return (
                 <div
                   key={item.id}
-                  className={`session-stream__item session-stream__item--artifact ${
+                  className={`session-stream__item session-stream__item--artifact ${artifactPhaseClass} ${
                     activeArtifact ? "session-stream__item--artifact-active" : ""
                   }`}
                 >
@@ -243,18 +350,30 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
                         <button
                           type="button"
                           className="session-stream__artifact-toggle"
-                          onClick={() => toggleTool(item.id)}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleTool(item.id);
+                          }}
                         >
                           {expanded ? "收起" : "展开"}
                         </button>
                       ) : null}
                     </div>
                     <div
-                      className={`session-stream__body session-stream__artifact-body ${
-                        expanded ? "session-stream__artifact-body--expanded" : ""
-                      }`}
+                      className="session-stream__body"
                     >
-                      <RichTextBlock text={item.body} />
+                      <div className="session-stream__artifact-body-shell">
+                        <div
+                          className={`session-stream__artifact-body ${
+                            expanded
+                              ? "session-stream__artifact-body--expanded"
+                              : "session-stream__artifact-body--collapsed"
+                          }`}
+                        >
+                          <ToolTextBlock text={item.body} />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -273,22 +392,6 @@ export function HoverDetails({ items, sessionStatus }: HoverDetailsProps) {
                   </div>
                 </div>
               ))}
-            </div>
-          ) : null}
-
-          {showTypingIndicator ? (
-            <div className="session-stream__section session-stream__section--footer">
-              <div className="session-stream__item session-stream__item--message session-stream__item--message-assistant session-stream__item--typing">
-                <div className="session-stream__header">
-                  <span className="session-stream__label">Assistant</span>
-                </div>
-                <div className="session-stream__body">
-                  <div className="session-stream__typing-indicator" aria-label="Agent 正在输入">
-                    <span className="session-stream__typing-text">正在整理回复</span>
-                    <span className="session-stream__typing-dots" aria-hidden="true" />
-                  </div>
-                </div>
-              </div>
             </div>
           ) : null}
         </>

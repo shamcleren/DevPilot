@@ -14,6 +14,12 @@ const ACTION_ID = "e2e-golden-action";
 const PENDING_TITLE = "E2E single choice prompt";
 const OPTION_APPROVE = "Approve";
 
+async function expandFirstCurrentSession(page: import("@playwright/test").Page) {
+  const summary = page.getByLabel(/Cursor (WAITING|RUNNING)/).first();
+  await expect(summary).toBeVisible({ timeout: 15_000 });
+  await summary.click();
+}
+
 test("cursor phase1: installs cursor hooks and surfaces degraded unsupported actions", async () => {
   const collector = await startActionResponseCollector();
   const homeDir = await fs.mkdtemp(path.join("/tmp", "codepal-home-"));
@@ -63,6 +69,8 @@ test("cursor phase1: installs cursor hooks and surfaces degraded unsupported act
       },
       codepal.ipcSocketPath,
     );
+
+    await expandFirstCurrentSession(mainPage);
 
     const pending = mainPage.getByLabel(phase1Title);
     await expect(pending).toBeVisible({ timeout: 15_000 });
@@ -134,6 +142,8 @@ test("round-trips a single_choice pending action", async () => {
     await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
+
+    await expandFirstCurrentSession(page);
 
     const pending = page.getByLabel(PENDING_TITLE);
     await expect(pending).toBeVisible();
@@ -211,6 +221,8 @@ test("same session: two blocking hooks with different actionIds route action_res
     await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
       timeout: 15_000,
     });
+
+    await expandFirstCurrentSession(page);
 
     await expect(page.getByLabel(TITLE_A)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel(TITLE_B)).toBeVisible();
@@ -299,6 +311,8 @@ test("same session: pendingClosed removes only the matching pending card", async
       codepal.ipcSocketPath,
     );
 
+    await expandFirstCurrentSession(page);
+
     const cardX = page.getByLabel(TITLE_REMOTE_X);
     const cardY = page.getByLabel(TITLE_REMOTE_Y);
     await expect(cardX).toBeVisible({ timeout: 15_000 });
@@ -326,6 +340,83 @@ test("same session: pendingClosed removes only the matching pending card", async
     );
 
     await expect(cardY).toBeHidden();
+  } finally {
+    await codepal.close().catch(() => undefined);
+    await collector.close().catch(() => undefined);
+  }
+});
+
+test("tool artifact interactions: copy button responds and expand/collapse changes body height", async () => {
+  const collector = await startActionResponseCollector();
+  const codepal = await launchCodePal({
+    actionResponseSocketPath: collector.socketPath,
+  });
+
+  const sessionId = "e2e-tool-artifact-session";
+  const toolBody = [
+    "```text",
+    "renjinming 67781 18.2 0.0 410663008 8576 ?? Ss 10:40AM 0:00.09 /bin/zsh -c snap=$(command cat <&3)",
+    "builtin unsetopt aliases 2>/dev/null; builtin unalias -m '*' 2>/dev/null || true",
+    "builtin eval \"$snap\"; COMMAND_EXIT_CODE=$?",
+    "dump_zsh_state >&4; builtin exit $COMMAND_EXIT_CODE",
+    "```",
+  ].join("\n");
+
+  try {
+    const page = await codepal.app.firstWindow();
+    await page.waitForLoadState("domcontentloaded");
+    await page.waitForLoadState("load");
+    await expect(page.getByRole("heading", { name: "CodePal" })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await sendStatusChange(
+      {
+        type: "status_change",
+        sessionId,
+        tool: "cursor",
+        status: "running",
+        task: "tool artifact e2e",
+        timestamp: Date.now(),
+        activityItems: [
+          {
+            id: "tool-artifact-1",
+            kind: "tool",
+            source: "tool",
+            title: "Tool",
+            body: toolBody,
+            timestamp: Date.now(),
+            toolName: "Tool",
+            toolPhase: "result",
+          },
+        ],
+      },
+      codepal.ipcSocketPath,
+    );
+
+    const summary = page.getByLabel("Cursor RUNNING").first();
+    await expect(summary).toBeVisible({ timeout: 15_000 });
+    await summary.click();
+
+    const copyButton = page.getByRole("button", { name: "复制" });
+    await expect(copyButton).toBeVisible();
+    await copyButton.click();
+    await expect(page.getByRole("button", { name: "已复制" })).toBeVisible();
+
+    const artifactBody = page.locator(".session-stream__artifact-body").first();
+    const expandButton = page.getByRole("button", { name: "展开" });
+    await expect(expandButton).toBeVisible();
+
+    const collapsedHeight = await artifactBody.evaluate((node) => node.clientHeight);
+    await expandButton.click();
+    await expect(page.getByRole("button", { name: "收起" })).toBeVisible();
+    const expandedHeight = await artifactBody.evaluate((node) => node.clientHeight);
+    expect(expandedHeight).toBeGreaterThan(collapsedHeight);
+
+    await page.getByRole("button", { name: "收起" }).click();
+    await expect(page.getByRole("button", { name: "展开" })).toBeVisible();
+    const recollapsedHeight = await artifactBody.evaluate((node) => node.clientHeight);
+    expect(recollapsedHeight).toBeLessThan(expandedHeight);
   } finally {
     await codepal.close().catch(() => undefined);
     await collector.close().catch(() => undefined);
@@ -372,6 +463,8 @@ test("pending card disappears when lifecycle expires without pendingClosed", asy
       },
       codepal.ipcSocketPath,
     );
+
+    await expandFirstCurrentSession(page);
 
     const pending = page.getByLabel(EXPIRY_TITLE);
     await expect(pending).toBeVisible({ timeout: 15_000 });
@@ -420,6 +513,8 @@ test("after a successful response the card hides and a second action_response is
       },
       codepal.ipcSocketPath,
     );
+
+    await expandFirstCurrentSession(page);
 
     const pending = page.getByLabel(FIRST_WIN_TITLE);
     await expect(pending).toBeVisible({ timeout: 15_000 });

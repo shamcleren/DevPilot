@@ -2,6 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  CODEX_FIXTURES,
+  CODEX_FIXTURE_SOURCE_PATH,
+} from "../../../tests/fixtures/codex";
 import { createCodexSessionWatcher } from "./codexSessionWatcher";
 
 describe("createCodexSessionWatcher", () => {
@@ -144,6 +148,34 @@ describe("createCodexSessionWatcher", () => {
     expect(onEvent.mock.calls[2]?.[0]).toMatchObject({
       status: "idle",
       task: "Context compacted",
+    });
+  });
+
+  it("replays codex response_item fixtures through watcher incremental polling", async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codepal-codex-"));
+    const relativePath = CODEX_FIXTURE_SOURCE_PATH.replace("/Users/demo/.codex/sessions/", "");
+    const filePath = path.join(tmpDir, relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, "");
+
+    const onEvent = vi.fn();
+    const watcher = createCodexSessionWatcher({
+      sessionsRoot: tmpDir,
+      onEvent,
+    });
+
+    for (const fixture of CODEX_FIXTURES) {
+      fs.appendFileSync(filePath, `${JSON.stringify(fixture.entry)}\n`);
+      await watcher.pollOnce();
+    }
+
+    expect(onEvent).toHaveBeenCalledTimes(CODEX_FIXTURES.length);
+    expect(onEvent.mock.calls.at(-1)?.[0]).toMatchObject({
+      sessionId: CODEX_FIXTURES[CODEX_FIXTURES.length - 1]?.expectation.sessionId,
+      tool: "codex",
+      status: CODEX_FIXTURES[CODEX_FIXTURES.length - 1]?.expectation.status,
+      task: CODEX_FIXTURES[CODEX_FIXTURES.length - 1]?.expectation.task,
+      activityItems: CODEX_FIXTURES[CODEX_FIXTURES.length - 1]?.expectation.activityItems,
     });
   });
 });

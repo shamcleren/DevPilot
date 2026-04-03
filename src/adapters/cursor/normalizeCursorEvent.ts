@@ -20,6 +20,49 @@ function firstString(
   return undefined;
 }
 
+function trimmedString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function firstNestedText(
+  value: unknown,
+  preferredKeys: readonly string[],
+  depth = 0,
+): string | undefined {
+  if (depth > 2 || value === null || value === undefined) {
+    return undefined;
+  }
+
+  const direct = trimmedString(value);
+  if (direct) {
+    return direct;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = firstNestedText(item, preferredKeys, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  if (typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  for (const key of preferredKeys) {
+    const nested = firstNestedText(record[key], preferredKeys, depth + 1);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return undefined;
+}
+
 function pickCursorSessionId(payload: Record<string, unknown>): string | null {
   for (const key of ["session_id", "sessionId", "conversation_id", "conversationId", "generation_id", "generationId"]) {
     const raw = payload[key];
@@ -33,6 +76,10 @@ function pickCursorSessionId(payload: Record<string, unknown>): string | null {
 }
 
 function statusFromHook(payload: Record<string, unknown>): string {
+  const notificationType = firstString(payload, ["notification_type"]);
+  if (notificationType === "permission_prompt") return "waiting";
+  if (notificationType === "idle_prompt") return "idle";
+
   const hookEventName = firstString(payload, ["hook_event_name"]);
   switch (hookEventName) {
     case "SessionStart":
@@ -156,6 +203,53 @@ function activityTimestamp(payload: Record<string, unknown>): number {
   return pickTimestamp(payload);
 }
 
+function pickToolInvocationBody(payload: Record<string, unknown>): string | undefined {
+  return (
+    firstString(payload, ["command", "command_line", "tool_input"]) ??
+    firstNestedText(payload.tool_input, ["file_path", "path", "uri", "url", "command", "query", "prompt"])
+  );
+}
+
+function pickToolResultBody(payload: Record<string, unknown>): string | undefined {
+  return (
+    firstString(payload, ["output", "content", "result"]) ??
+    firstNestedText(payload.result, [
+      "output",
+      "text",
+      "content",
+      "message",
+      "summary",
+      "result",
+      "response",
+      "stdout",
+      "stderr",
+    ]) ??
+    firstNestedText(payload.tool_result, [
+      "output",
+      "text",
+      "content",
+      "message",
+      "summary",
+      "result",
+      "response",
+      "stdout",
+      "stderr",
+    ]) ??
+    firstNestedText(payload.response, [
+      "output",
+      "text",
+      "content",
+      "message",
+      "summary",
+      "result",
+      "response",
+      "stdout",
+      "stderr",
+    ]) ??
+    firstString(payload, ["stdout", "stderr"])
+  );
+}
+
 function buildCursorActivityItems(
   payload: Record<string, unknown>,
   status: string,
@@ -166,7 +260,8 @@ function buildCursorActivityItems(
   const hookEventName = firstString(payload, ["hook_event_name"]);
   const notificationType = firstString(payload, ["notification_type"]);
   const toolName = firstString(payload, ["tool_name"]);
-  const commandText = firstString(payload, ["command", "command_line", "tool_input"]);
+  const commandText = pickToolInvocationBody(payload);
+  const resultText = pickToolResultBody(payload);
 
   if (unsupported) {
     return [
@@ -189,7 +284,7 @@ function buildCursorActivityItems(
         kind: "tool",
         source: "tool",
         title: toolName,
-        body: toolName,
+        body: commandText ?? toolName,
         timestamp,
         toolName,
         toolPhase: "call",
@@ -223,13 +318,14 @@ function buildCursorActivityItems(
     hookEventName === "PostToolUse"
   ) {
     const resolvedToolName = toolName ?? "Tool";
+    const fallbackTask = task && task !== resolvedToolName ? task : undefined;
     return [
       {
         id: `cursor:${timestamp}:${hookEventName}:${resolvedToolName}`,
         kind: "tool",
         source: "tool",
         title: resolvedToolName,
-        body: task ?? commandText ?? resolvedToolName,
+        body: resultText ?? fallbackTask ?? commandText ?? resolvedToolName,
         timestamp,
         toolName: resolvedToolName,
         toolPhase: "result",

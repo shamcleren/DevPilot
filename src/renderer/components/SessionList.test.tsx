@@ -24,28 +24,42 @@ function row(overrides: Partial<MonitorSessionRow>): MonitorSessionRow {
 }
 
 describe("SessionList", () => {
-  it("renders only actively progressing sessions in current and keeps history newest-first", () => {
+  it("renders a single session list ordered by last user message time before updatedAt", () => {
     const html = renderToStaticMarkup(
       <SessionList
         sessions={[
-          row({ id: "history-1", status: "completed", updatedAt: 10, collapsedSummary: "old done" }),
-          row({ id: "current-1", status: "running", updatedAt: 30, collapsedSummary: "live run" }),
-          row({ id: "history-0", status: "idle", updatedAt: 20, collapsedSummary: "turn aborted" }),
-          row({ id: "history-2", status: "error", updatedAt: 40, collapsedSummary: "failed" }),
+          row({
+            id: "fallback-newer",
+            status: "running",
+            updatedAt: 40,
+            collapsedSummary: "live run",
+          }),
+          row({
+            id: "user-newest",
+            status: "completed",
+            updatedAt: 10,
+            lastUserMessageAt: 100,
+            collapsedSummary: "latest user turn",
+          }),
+          row({
+            id: "user-older",
+            status: "idle",
+            updatedAt: 50,
+            lastUserMessageAt: 80,
+            collapsedSummary: "older user turn",
+          }),
         ]}
         onRespond={vi.fn()}
       />,
     );
 
-    expect(html).toContain("Current");
-    expect(html).toContain("History");
-    expect(html.indexOf("Current")).toBeLessThan(html.indexOf("History"));
-    expect(html.indexOf("live run")).toBeLessThan(html.indexOf("failed"));
-    expect(html.indexOf("failed")).toBeLessThan(html.indexOf("turn aborted"));
-    expect(html.indexOf("turn aborted")).toBeLessThan(html.indexOf("old done"));
+    expect(html).not.toContain("Current");
+    expect(html).not.toContain("History");
+    expect(html.indexOf("latest user turn")).toBeLessThan(html.indexOf("older user turn"));
+    expect(html.indexOf("older user turn")).toBeLessThan(html.indexOf("live run"));
   });
 
-  it("renders title labels for grouped sessions", () => {
+  it("renders title labels in the flat session list", () => {
     const html = renderToStaticMarkup(
       <SessionList
         sessions={[

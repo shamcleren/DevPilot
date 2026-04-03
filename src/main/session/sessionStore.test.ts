@@ -54,27 +54,86 @@ describe("createSessionStore", () => {
     });
   });
 
-  it("returns sessions ordered by most recent updatedAt first", () => {
+  it("returns sessions ordered by most recent user message time before updatedAt", () => {
     const store = createSessionStore();
 
     store.applyEvent({
       type: "status_change",
-      sessionId: "older",
+      sessionId: "fallback-newer",
       tool: "codex",
-      status: "completed",
-      task: "older",
+      status: "running",
+      task: "fallback-newer",
       timestamp: 10,
     });
     store.applyEvent({
       type: "status_change",
-      sessionId: "newer",
+      sessionId: "fallback-newer",
       tool: "codex",
       status: "running",
-      task: "newer",
+      task: "fallback-newer update",
+      timestamp: 30,
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "user-newest",
+      tool: "codex",
+      status: "running",
+      task: "latest user turn",
       timestamp: 20,
+      meta: {
+        codex_event_type: "user_message",
+      },
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "user-older",
+      tool: "codex",
+      status: "running",
+      task: "older user turn",
+      timestamp: 15,
+      meta: {
+        codex_event_type: "user_message",
+      },
     });
 
-    expect(store.getSessions().map((session) => session.id)).toEqual(["newer", "older"]);
+    expect(store.getSessions().map((session) => session.id)).toEqual([
+      "user-newest",
+      "user-older",
+      "fallback-newer",
+    ]);
+  });
+
+  it("preserves lastUserMessageAt across non-user follow-up events", () => {
+    const store = createSessionStore();
+
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-followup",
+      tool: "codex",
+      status: "running",
+      task: "请继续",
+      timestamp: 100,
+      meta: {
+        codex_event_type: "user_message",
+      },
+    });
+    store.applyEvent({
+      type: "status_change",
+      sessionId: "codex-followup",
+      tool: "codex",
+      status: "completed",
+      task: "已经完成。",
+      timestamp: 200,
+      meta: {
+        codex_event_type: "task_complete",
+      },
+    });
+
+    expect(store.getSessions()[0]).toMatchObject({
+      id: "codex-followup",
+      updatedAt: 200,
+      lastUserMessageAt: 100,
+    });
   });
 
   it("updates a running Codex session to idle when an interrupted turn aborts", () => {

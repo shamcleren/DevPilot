@@ -145,6 +145,7 @@ describe("SessionRow pending action", () => {
     expect(html).toContain(
       "Notification (permission_prompt): CodeBuddy needs your permission to use Bash",
     );
+    expect(html).toContain("session-stream__item--artifact-call");
   });
 
   it("renders the control-deck collapsed summary line", () => {
@@ -241,7 +242,7 @@ describe("SessionRow pending action", () => {
     expect(html).toContain("Proceed?");
   });
 
-  it("renders inline code and markdown-style file links inside assistant messages", () => {
+  it("renders inline code and external-style markdown links inside assistant messages", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
@@ -265,12 +266,46 @@ describe("SessionRow pending action", () => {
     );
 
     expect(html).toContain("session-stream__code");
-    expect(html).toContain("session-stream__file-link");
+    expect(html).toContain("session-stream__link");
     expect(html).toContain("src/adapters/codex/normalizeCodexLogEvent.ts");
     expect(html).toContain("activityItems.body");
+    expect(html).toContain("target=\"_blank\"");
   });
 
-  it("shows a typing indicator inline while a running session already has visible content", () => {
+  it("renders fenced code blocks and strong emphasis inside assistant messages", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          timelineItems: [
+            {
+              id: "md-1",
+              kind: "message",
+              source: "assistant",
+              label: "Assistant",
+              title: "Assistant",
+              body:
+                "最新日志末尾是：\n\n```text\n[case1] round 2/12 start at 2026-04-03T10:35:00\n[case1] request 1/10 success in 253.202s\n```\n\n另外，目前日志里还**没有**看到 `connection_refused`。",
+              timestamp: 1,
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__codeblock");
+    expect(html).toContain("session-stream__codeblock-copy");
+    expect(html).toContain("[case1] round 2/12 start at 2026-04-03T10:35:00");
+    expect(html).not.toContain("```text");
+    expect(html).not.toContain("```</code>");
+    expect(html).toContain("<strong class=\"session-stream__strong\">没有</strong>");
+    expect(html).toContain("session-stream__codeblock-content");
+    expect(html).toContain("session-stream__codeblock-code language-text");
+  });
+
+  it("shows a typing indicator as the last inline message while a running session already has visible content", () => {
     const html = renderToStaticMarkup(
       <SessionRow
         session={baseRow({
@@ -293,10 +328,10 @@ describe("SessionRow pending action", () => {
       />,
     );
 
-    expect(html).toContain("session-stream__section--footer");
     expect(html).toContain("session-stream__typing-indicator");
     expect(html).toContain("session-stream__typing-dots");
     expect(html).toContain("正在整理回复");
+    expect(html).not.toContain("session-stream__section--footer");
   });
 
   it("renders user and agent messages with distinct role classes", () => {
@@ -383,6 +418,130 @@ describe("SessionRow pending action", () => {
     expect(html).toContain("session-row__overview-artifact");
     expect(html).toContain("session-stream__item--artifact-active");
     expect(html).toContain("session-stream__artifact-eyebrow");
+    expect(html).toContain("session-stream__item--artifact-call");
+  });
+
+  it("renders result artifacts with a distinct result-state class", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "completed",
+          timelineItems: [
+            {
+              id: "tool-result-1",
+              kind: "tool",
+              source: "tool",
+              label: "Bash",
+              title: "Bash",
+              body: "PASS src/main/ipc/ipcHub.test.ts",
+              timestamp: 2,
+              toolName: "Bash",
+              toolPhase: "result",
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__item--artifact-result");
+  });
+
+  it("renders tool artifacts with a collapsible body shell when content is long", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "running",
+          timelineItems: [
+            {
+              id: "tool-long-1",
+              kind: "tool",
+              source: "tool",
+              label: "Tool",
+              title: "Tool",
+              body:
+                "renjinming 67781 18.2 0.0 410663008 8576 ?? Ss 10:40AM 0:00.09 /bin/zsh -c snap=$(command cat <&3); builtin unsetopt aliases 2>/dev/null; builtin unalias -m '*' 2>/dev/null || true; builtin eval \"$snap\"",
+              timestamp: 2,
+              toolName: "Tool",
+              toolPhase: "result",
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__artifact-toggle");
+    expect(html).toContain("展开");
+    expect(html).toContain("session-stream__artifact-body-shell");
+    expect(html).toContain("session-stream__artifact-body--collapsed");
+    expect(html).toContain("session-stream__plaintext");
+  });
+
+  it("renders tool artifacts as plain text instead of markdown blocks", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "completed",
+          timelineItems: [
+            {
+              id: "tool-diff-1",
+              kind: "tool",
+              source: "tool",
+              label: "Tool",
+              title: "Tool",
+              body: "diff --git a/README.md b/README.md\n--- a/README.md\n+++ /dev/null\n-# Heading",
+              timestamp: 2,
+              toolName: "Tool",
+              toolPhase: "result",
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__plaintext");
+    expect(html).toContain("session-stream__plaintext--diff");
+    expect(html).toContain("session-stream__plaintext-line--meta");
+    expect(html).toContain("session-stream__plaintext-line--remove");
+    expect(html).not.toContain("session-stream__richtext");
+    expect(html).not.toContain("session-stream__strong");
+  });
+
+  it("renders json tool artifacts with a dedicated plaintext json class", () => {
+    const html = renderToStaticMarkup(
+      <SessionRow
+        session={baseRow({
+          status: "completed",
+          timelineItems: [
+            {
+              id: "tool-json-1",
+              kind: "tool",
+              source: "tool",
+              label: "Tool",
+              title: "Tool",
+              body: "{\"status\":\"ok\",\"count\":2}",
+              timestamp: 2,
+              toolName: "Tool",
+              toolPhase: "result",
+            },
+          ],
+        })}
+        expanded
+        onToggleExpanded={vi.fn()}
+        onRespond={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("session-stream__plaintext--json");
+    expect(html).toContain("&quot;status&quot;: &quot;ok&quot;");
   });
 
   it("omits a single low-information terminal note when top-level status already covers it", () => {

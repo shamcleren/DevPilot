@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CODEBUDDY_FIXTURES } from "../../../tests/fixtures/codebuddy";
+import { CURSOR_FIXTURES } from "../../../tests/fixtures/cursor";
 import { lineToSessionEvent } from "./hookIngress";
 
 afterEach(() => {
@@ -189,6 +190,31 @@ describe("lineToSessionEvent", () => {
       },
     });
   });
+
+  it.each(CURSOR_FIXTURES)(
+    "normalizes Cursor fixture $id through ingress",
+    ({ payload, expectation }) => {
+      const ev = lineToSessionEvent(
+        JSON.stringify({
+          tool: "cursor",
+          source: "cursor",
+          ...payload,
+        }),
+      );
+
+      expect(ev).toMatchObject({
+        sessionId: expectation.sessionId,
+        tool: "cursor",
+        status: expectation.status,
+        ...(expectation.task !== undefined ? { task: expectation.task } : {}),
+        activityItems: expectation.activityItems,
+      });
+
+      if (expectation.meta) {
+        expect(ev?.meta).toEqual(expect.objectContaining(expectation.meta));
+      }
+    },
+  );
 
   it.each(CODEBUDDY_FIXTURES)(
     "normalizes CodeBuddy fixture $id through ingress",

@@ -24,6 +24,62 @@ function fullText(text: string | undefined, fallback?: string): string | undefin
   return trimmed || fallback;
 }
 
+function firstContentText(content: unknown, depth = 0): string | undefined {
+  if (depth > 5 || content === null || content === undefined) return undefined;
+
+  const direct = fullText(typeof content === "string" ? content : undefined);
+  if (direct) {
+    return direct;
+  }
+
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      const nested = firstContentText(item, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+    return undefined;
+  }
+
+  if (typeof content !== "object") {
+    return undefined;
+  }
+
+  const record = content as Record<string, unknown>;
+  return firstContentText(record.text, depth + 1) ?? firstContentText(record.content, depth + 1);
+}
+
+function stringifyValue(value: unknown): string | undefined {
+  const direct = fullText(typeof value === "string" ? value : undefined);
+  if (direct) {
+    return direct;
+  }
+
+  const nested = firstContentText(value);
+  if (nested) {
+    return nested;
+  }
+
+  if (typeof value === "object" && value !== null) {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
+}
+
+function responseItemMessageText(payload: Record<string, unknown>): string | undefined {
+  return (
+    fullText(typeof payload.text === "string" ? payload.text : undefined) ??
+    fullText(typeof payload.message === "string" ? payload.message : undefined) ??
+    firstContentText(payload.content)
+  );
+}
+
 function parseTimestamp(raw: unknown): number {
   if (typeof raw === "string") {
     const parsed = Date.parse(raw);
@@ -235,6 +291,78 @@ export function normalizeCodexLogEvent(
             },
           ];
         }
+        break;
+      }
+      default:
+        return null;
+    }
+  } else if (entryType === "response_item") {
+    const itemType = typeof payload.type === "string" ? payload.type : "";
+    switch (itemType) {
+      case "message": {
+        if (payload.role !== "assistant") return null;
+        const messageText = responseItemMessageText(payload);
+        if (!messageText) return null;
+        status = "running";
+        task = firstLine(messageText);
+        activityItems = [
+          {
+            id: `codex:${timestamp}:response-message`,
+            kind: "message",
+            source: "assistant",
+            title: "Assistant",
+            body: messageText,
+            timestamp,
+          },
+        ];
+        break;
+      }
+      case "function_call": {
+        const toolName =
+          (typeof payload.name === "string" && payload.name.trim()) ||
+          (typeof payload.tool_name === "string" && payload.tool_name.trim()) ||
+          "Tool";
+        const argumentsText = stringifyValue(payload.arguments) ?? stringifyValue(payload.input) ?? toolName;
+        status = "running";
+        task = toolName;
+        activityItems = [
+          {
+            id: `codex:${timestamp}:function-call:${toolName}`,
+            kind: "tool",
+            source: "tool",
+            title: toolName,
+            body: argumentsText,
+            timestamp,
+            toolName,
+            toolPhase: "call",
+          },
+        ];
+        break;
+      }
+      case "function_call_output": {
+        const outputText =
+          stringifyValue(payload.output) ??
+          stringifyValue(payload.content) ??
+          stringifyValue(payload.text);
+        if (!outputText) return null;
+        const toolName =
+          (typeof payload.name === "string" && payload.name.trim()) ||
+          (typeof payload.tool_name === "string" && payload.tool_name.trim()) ||
+          "Tool";
+        status = "running";
+        task = firstLine(outputText);
+        activityItems = [
+          {
+            id: `codex:${timestamp}:function-output:${toolName}`,
+            kind: "tool",
+            source: "tool",
+            title: toolName,
+            body: outputText,
+            timestamp,
+            toolName,
+            toolPhase: "result",
+          },
+        ];
         break;
       }
       default:

@@ -43,8 +43,11 @@ contextBridge.exposeInMainWorld("codepal", {
       ipcRenderer.removeListener(channel, listener);
     };
   },
-  openPath(path: string) {
-    return ipcRenderer.invoke("codepal:open-path", { path }) as Promise<string>;
+  openExternalTarget(target: string) {
+    return ipcRenderer.invoke("codepal:open-external-target", { target }) as Promise<string>;
+  },
+  writeClipboardText(text: string) {
+    return ipcRenderer.invoke("codepal:write-clipboard-text", { text }) as Promise<void>;
   },
   respondToPendingAction(sessionId: string, actionId: string, option: string) {
     ipcRenderer.send("codepal:action-response", { sessionId, actionId, option });

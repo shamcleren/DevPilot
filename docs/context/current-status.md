@@ -34,11 +34,14 @@
 - CodeBuddy normalizer remains in-repo for future expansion, but is outside the current Phase 1 acceptance target
 - PyCharm is expected to integrate through CodeBuddy plugin payloads rather than a separate adapter
 - Cursor and Codex activity flow now normalize into shared `ActivityItem[]` session activity records before render
+- Cursor and Codex now both have shared fixture-backed calibration baselines under `tests/fixtures/cursor/` and `tests/fixtures/codex/`, and those samples are exercised through adapter plus ingress / watcher tests
 - Expanded timeline now uses a unified visual hierarchy: message bubbles, execution-style tool cards, and lighter sideband notes/system rows
 - Single low-information terminal status notes such as `Working` / `Completed` are now suppressed in the expanded timeline because the top summary row already carries session state
 - Low-signal system sideband rows such as `File edited` are now suppressed alongside duplicate status tails, keeping Cursor/Codex closer to the same visual rhythm
 - Running sessions now use a sticky pseudo-reply loading indicator inside the expanded timeline footer instead of a duplicated top-row status marker
 - Cursor normalizer now covers a broader first-pass activity subset including assistant responses, shell/MCP/read tool calls, tool results, and file-edit system events
+- Session list no longer jumps between `Current / History`; it is now a single flat list ordered by `lastUserMessageAt` first, then `updatedAt`
+- Session cards now carry clearer state-level row treatment, including stronger `running` / `waiting` distinction and lightweight running-only motion
 
 ### Integration Settings
 
@@ -111,15 +114,16 @@ npm run dist:mac
 - Cursor full hook-event calibration is still being expanded beyond the current normalized subset; unknown payloads should continue to be pushed down into adapter/normalizer work instead of renderer-side guessing
 - PyCharm / CodeBuddy plugin-specific payloads are intentionally outside the current Phase 1 acceptance target
 - The current macOS test build has moved to the executable hook path, but still does not include formal signing / notarization
-- Cursor payload calibration is still incomplete beyond the current normalized subset
-- Cursor still needs more real-payload calibration for edge-case hook variants and richer tool-result bodies
-- Tool card visual upgrade and long-text density optimization have landed in a first pass, but can still be refined after more real payload coverage arrives
-- Loading treatment is now clearer for running sessions, but still needs real-session validation to tune wording, prominence, and mixed message/tool timing edge cases
+- `approval` actions still round-trip as generic option responses; explicit `allow / deny` semantics and dedicated UI treatment are the next product-level control gap
+- CodePal -> codeagent message sending is still missing; current product is stronger on monitoring and bounded action-response than on active conversation control
+- CodeBuddy / PyCharm payload calibration remains deferred until the current Cursor / Codex control loop is more complete
 - GitHub Project creation is blocked until `gh auth refresh -s project,read:project` is completed
 
 ## Recommended Next Steps
 
-1. Keep expanding Cursor payload coverage so more source/tool/system distinctions are decided inside adapter normalization
-2. Refine execution-card content structure against real tool payloads, especially richer tool result and system event variants
-3. Continue tuning long-text density and loading prominence for mixed message/tool sessions without reintroducing source-specific renderer branching
-4. Verify PyCharm / CodeBuddy plugin payloads against the new fixture matrix after the shared protocol remains stable
+1. Finish the existing codeagent control loop before adding new agents:
+   - explicit `allow / deny` approval semantics
+   - a minimal CodePal -> codeagent message channel
+2. Run those control capabilities through Cursor / Codex first so the shared protocol is validated on existing agents
+3. Continue expanding fixture-backed Cursor / Codex payload coverage when new real samples appear, instead of adding more ad-hoc inline test payloads
+4. Resume CodeBuddy / PyCharm payload calibration only after the current control loop is stable
